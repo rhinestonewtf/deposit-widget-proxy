@@ -1,0 +1,80 @@
+name: Push docker images to ECR and deploy
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    name: Build and push docker image to AWS ECR
+    runs-on: ubuntu-latest
+    outputs:
+      short_sha: ${{ steps.set-tags.outputs.short_sha }}
+    env:
+      AWS_REGION: us-east-1
+      ECR_REGISTRY: 336594912921.dkr.ecr.us-east-1.amazonaws.com
+      APP_NAME: deposit-widget-proxy
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          aws-access-key-id: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: login-ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+      - name: Set Docker tags
+        id: set-tags
+        run: |
+          SHORT_SHA=${GITHUB_SHA:0:7}
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build and push
+        run: |
+          docker build -t $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} .
+          docker tag $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} $ECR_REGISTRY/$APP_NAME:latest
+          docker push $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }}
+          docker push $ECR_REGISTRY/$APP_NAME:latest
+
+  cd-pipeline:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: rhinestonewtf
+      - name: Dispatch and watch cd-pipeline
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          DISPATCH_TS=$(date -u +%s)
+
+          gh workflow run aws-cd-pipeline.yaml \
+            --repo rhinestonewtf/infra \
+            --ref main \
+            --field app_name=deposit-widget-proxy \
+            --field version_sha=${{ needs.build-and-push.outputs.short_sha }}
+
+          echo "Waiting for run to be created..."
+          sleep 8
+
+          RUN_ID=$(gh run list \
+            --repo rhinestonewtf/infra \
+            --workflow aws-cd-pipeline.yaml \
+            --event workflow_dispatch \
+            --limit 10 \
+            --json databaseId,createdAt \
+            --jq "[.[] | select((.createdAt | fromdateiso8601) >= $DISPATCH_TS)] | .[0].databaseId")
+
+          if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
+            echo "Failed to find the dispatched workflow run" >&2
+            exit 1
+          fi
+
+          echo "Deployment action has been triggered: https://github.com/rhinestonewtf/infra/actions/runs/$RUN_ID"
