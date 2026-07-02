@@ -21,9 +21,13 @@ Env vars:
 
 ## Proxied routes
 
-`POST /setup-account`, `POST /register`, `POST /safe/withdraw`,
+`POST /setup-account`, `POST /register`, `POST /quotes/preview`,
+`POST /safe/withdraw`, `POST /polymarket/withdraw`,
+`POST /onramp/swapped/widget-url`, `POST /onramp/swapped/connect-url`,
 `GET /check/:address`, `GET /portfolio/:address`, `GET /portfolio/solana/:address`,
-`GET /deposits`, `GET /liquidity`, `GET /health`.
+`GET /deposits`, `GET /liquidity`, `GET /prices`,
+`GET /onramp/swapped/connect-exchanges`, `GET /onramp/swapped/status/:smartAccount`,
+`GET /health`.
 
 Clients call these without an API key — the proxy injects it.
 
@@ -62,9 +66,10 @@ Field values:
 ### Webhook delivery
 
 If `webhookUrl` is set, the processor POSTs every deposit event
-(`deposit-received`, `bridge-started`, `bridge-complete`, `bridge-failed`,
-`post-bridge-swap-*`, `deposit-refunded`, `error`) to that URL. Signed with
-HMAC-SHA256 in `X-Webhook-Signature: sha256=<hex>` when `webhookSecret` is set.
+(`deposit-received`, `bridge-started`, `bridge-delayed`, `bridge-complete`,
+`bridge-failed`, `deposit-rejected`, `deposit-refunded`, `error`) to that URL.
+Signed with HMAC-SHA256 in
+`X-Webhook-Signature: sha256=<hex>` when `webhookSecret` is set.
 Fire-and-forget with 3 retries — your endpoint must be idempotent.
 
 Without `webhookUrl`, no webhooks fire. The modal doesn't need them — it polls

@@ -22,7 +22,14 @@ const ROUTES = [
   ["get", "/portfolio/solana/:address"],
   ["get", "/deposits"],
   ["get", "/liquidity"],
+  ["get", "/prices"],
+  ["post", "/quotes/preview"],
   ["post", "/safe/withdraw"],
+  ["post", "/polymarket/withdraw"],
+  ["post", "/onramp/swapped/widget-url"],
+  ["post", "/onramp/swapped/connect-url"],
+  ["get", "/onramp/swapped/connect-exchanges"],
+  ["get", "/onramp/swapped/status/:smartAccount"],
 ] as const;
 
 const app = new Hono();
