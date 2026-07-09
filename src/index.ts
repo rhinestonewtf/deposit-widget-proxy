@@ -48,9 +48,21 @@ app.get("/health", (c) => c.json({ ok: true }));
 for (const [method, path] of ROUTES) {
   app[method](path, async (c) => {
     const { pathname, search } = new URL(c.req.url);
+    // Forward the browser's Origin/Referer to the processor so it can derive
+    // the Swapped submerchant (per-dapp attribution) from the embedding page's
+    // domain. Without these, the processor only sees this proxy and the
+    // submerchant falls back to "unknown".
+    const headers: Record<string, string> = {
+      ...JSON_HEADERS,
+      "x-api-key": API_KEY,
+    };
+    const origin = c.req.header("origin");
+    if (origin) headers.origin = origin;
+    const referer = c.req.header("referer");
+    if (referer) headers.referer = referer;
     const upstream = await fetch(`${BACKEND_URL}${pathname}${search}`, {
       method: method.toUpperCase(),
-      headers: { ...JSON_HEADERS, "x-api-key": API_KEY },
+      headers,
       body: method === "post" ? await c.req.text() : undefined,
     });
     return new Response(await upstream.text(), {
