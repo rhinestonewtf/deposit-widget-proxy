@@ -7,6 +7,15 @@ const DEFAULT_BACKEND_URL =
 const BACKEND_URL = (
   process.env.DEPOSIT_SERVICE_URL ?? DEFAULT_BACKEND_URL
 ).replace(/\/$/, "");
+// The QR/transfer token catalog (GET /tokens) is served statically by
+// deposit-widget-backend, NOT by the deposit-processor. It lives at the same
+// host under /deposit-widget, so derive it from the processor URL (overridable
+// via WIDGET_BACKEND_URL). If the processor URL doesn't match, this no-ops and
+// /tokens 404s upstream — the modal falls back to its built-in token set.
+const WIDGET_BACKEND_URL = (
+  process.env.WIDGET_BACKEND_URL ??
+  BACKEND_URL.replace(/\/deposit-processor$/, "/deposit-widget")
+).replace(/\/$/, "");
 const API_KEY = process.env.RHINESTONE_API_KEY?.trim();
 if (!API_KEY) {
   throw new Error("RHINESTONE_API_KEY is not set");
@@ -14,6 +23,8 @@ if (!API_KEY) {
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
+// Each route is [method, path] forwarded to BACKEND_URL, or [method, path,
+// upstreamBase] to override the upstream for that route.
 const ROUTES = [
   ["post", "/setup-account"],
   ["post", "/register"],
@@ -30,6 +41,14 @@ const ROUTES = [
   ["post", "/onramp/swapped/connect-url"],
   ["get", "/onramp/swapped/connect-exchanges"],
   ["get", "/onramp/swapped/status/:smartAccount"],
+  // Read-only client config for the modal. Only GET is proxied — POST /setup is
+  // an admin write (rotates the webhook secret / sponsorship) and must stay
+  // off the browser-facing proxy. The processor never returns the signing
+  // secret here (only `hasWebhookSecret`), so this is safe to expose.
+  ["get", "/setup"],
+  // Static top-tokens-per-chain list for the QR flow — served by the widget
+  // backend, not the processor.
+  ["get", "/tokens", WIDGET_BACKEND_URL],
 ] as const;
 
 const app = new Hono();
@@ -45,9 +64,10 @@ app.use(
 
 app.get("/health", (c) => c.json({ ok: true }));
 
-for (const [method, path] of ROUTES) {
+for (const [method, path, upstreamBase] of ROUTES) {
   app[method](path, async (c) => {
     const { pathname, search } = new URL(c.req.url);
+    const base = upstreamBase ?? BACKEND_URL;
     // Forward the browser's Origin/Referer to the processor so it can derive
     // the Swapped submerchant (per-dapp attribution) from the embedding page's
     // domain. Without these, the processor only sees this proxy and the
@@ -60,7 +80,7 @@ for (const [method, path] of ROUTES) {
     if (origin) headers.origin = origin;
     const referer = c.req.header("referer");
     if (referer) headers.referer = referer;
-    const upstream = await fetch(`${BACKEND_URL}${pathname}${search}`, {
+    const upstream = await fetch(`${base}${pathname}${search}`, {
       method: method.toUpperCase(),
       headers,
       body: method === "post" ? await c.req.text() : undefined,

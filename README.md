@@ -17,7 +17,12 @@ Env vars:
 |---|---|---|
 | `RHINESTONE_API_KEY` | yes | — |
 | `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` |
+| `WIDGET_BACKEND_URL` | no | `DEPOSIT_SERVICE_URL` with `/deposit-processor` → `/deposit-widget` |
 | `PORT` | no | `4000` |
+
+`WIDGET_BACKEND_URL` is only used for `GET /tokens` (the static QR-flow token
+catalog is served by deposit-widget-backend, not the processor). The default
+derivation works when both run on the same host; override it otherwise.
 
 ## Proxied routes
 
@@ -25,11 +30,12 @@ Env vars:
 `POST /safe/withdraw`, `POST /polymarket/withdraw`,
 `POST /onramp/swapped/widget-url`, `POST /onramp/swapped/connect-url`,
 `GET /check/:address`, `GET /portfolio/:address`, `GET /portfolio/solana/:address`,
-`GET /deposits`, `GET /liquidity`, `GET /prices`,
+`GET /deposits`, `GET /liquidity`, `GET /prices`, `GET /setup`, `GET /tokens`,
 `GET /onramp/swapped/connect-exchanges`, `GET /onramp/swapped/status/:smartAccount`,
 `GET /health`.
 
-Clients call these without an API key — the proxy injects it.
+Clients call these without an API key — the proxy injects it. `GET /tokens` is
+forwarded to `WIDGET_BACKEND_URL`; everything else goes to `DEPOSIT_SERVICE_URL`.
 
 ## Configuring your client (`/setup`)
 
@@ -37,8 +43,10 @@ One-off admin call to enable gas sponsorship and/or webhook notifications for
 your API key. **Optional** — the modal works without it, but users will pay all
 fees and no webhooks will fire.
 
-Call the processor directly (not through the proxy — `/setup` isn't proxied
-since it's an admin config, not per-user):
+Only the write (`POST /setup`) goes to the processor directly — it rotates the
+webhook secret and sponsorship rules, so it must not sit behind the browser-facing
+proxy. (The read, `GET /setup`, *is* proxied so the modal can load your config;
+it never returns the signing secret, only `hasWebhookSecret`.)
 
 ```bash
 curl -X POST https://v1.orchestrator.rhinestone.dev/deposit-processor/setup \
