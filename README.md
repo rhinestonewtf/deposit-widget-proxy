@@ -109,7 +109,10 @@ from the signed token, so the browser presents a credential rather than
 describing a refund it would like to happen.
 
 Responses: `401` (missing/invalid/expired token), `403` (the deposit isn't that
-recipient's), `404` (refunds not enabled), otherwise the processor's own response.
+recipient's), `404` (refunds not enabled), otherwise the processor's own response
+plus a `destination` field reporting where the funds were actually sent — that
+comes from the token, which need not match what the browser asked for, and the
+modal shows it rather than the address the user typed.
 
 ### Notes
 

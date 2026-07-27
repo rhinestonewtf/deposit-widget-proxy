@@ -213,6 +213,29 @@ describe("happy path", () => {
     });
   });
 
+  test("reports the token's destination back, not whatever the browser asked for", async () => {
+    // The app mints the token, so its destination can differ from the one the
+    // page posted. Without echoing it the modal shows the user an address the
+    // funds never reached.
+    refundCalls = [];
+    const res = await post(PROXY_PORT, await token(OWNED));
+    expect(await res.json()).toMatchObject({
+      transactionHash: "0xfeed",
+      destination: OWNED.destination,
+    });
+  });
+
+  test("does not add a destination to an error response", async () => {
+    refundCalls = [];
+    // 403 is produced before the upstream call, so it must stay untouched.
+    const res = await post(
+      PROXY_PORT,
+      await token({ ...OWNED, account: "0xdeadbeef" }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden" });
+  });
+
   test("scopes the ownership lookup and includes spam-flagged rows", async () => {
     refundCalls = [];
     lookupQueries = [];
