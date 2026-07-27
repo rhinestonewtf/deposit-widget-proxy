@@ -18,11 +18,15 @@ Env vars:
 | `RHINESTONE_API_KEY` | yes | — |
 | `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` |
 | `WIDGET_BACKEND_URL` | no | `DEPOSIT_SERVICE_URL` with `/deposit-processor` → `/deposit-widget` |
+| `REFUND_TOKEN_SECRET` | no | — (unset disables self-service refunds entirely) |
 | `PORT` | no | `4000` |
 
 `WIDGET_BACKEND_URL` is only used for `GET /tokens` (the static QR-flow token
 catalog is served by deposit-widget-backend, not the processor). The default
 derivation works when both run on the same host; override it otherwise.
+
+`REFUND_TOKEN_SECRET` opts into [self-service refunds](#self-service-refunds)
+and is inert until you set it.
 
 ## Proxied routes
 
@@ -37,6 +41,89 @@ derivation works when both run on the same host; override it otherwise.
 
 Clients call these without an API key — the proxy injects it. `GET /tokens` is
 forwarded to `WIDGET_BACKEND_URL`; everything else goes to `DEPOSIT_SERVICE_URL`.
+
+`POST /deposits/refund` is also available, but **only when `REFUND_TOKEN_SECRET`
+is set** — see below.
+
+## Self-service refunds
+
+Lets a user recover a `failed` or `rejected` deposit themselves, instead of
+raising a support ticket. **Opt-in**: without `REFUND_TOKEN_SECRET` the route is
+never registered and nothing changes.
+
+### Why your app has to be involved
+
+Deposit accounts are owned by the Rhinestone service, so there is no user wallet
+that can sign for a refund — and when the deposit came from an exchange, the
+sender can't sign either. Whether a given deposit belongs to a given user is
+something **only your app knows**: it authenticated them, and it chose the
+`recipient` it passed to the modal.
+
+So your app vouches, by minting a short-lived token. This proxy verifies it,
+confirms the deposit really does belong to that recipient, and only then spends
+your API key.
+
+### Minting a token
+
+Sign an HS256 JWT with `REFUND_TOKEN_SECRET` from an endpoint that requires a
+logged-in session. Every claim is required:
+
+| Claim | Meaning |
+|---|---|
+| `recipient` | The user's in-app recipient — what the deposit is checked against. **Not** where the money goes. |
+| `destination` | Where the refunded funds are sent, on the deposit's source chain. |
+| `chain`, `txHash`, `account`, `token` | Identify the deposit, as returned by `GET /deposits`. |
+| `exp` | Required. Keep it short — 60s is plenty. |
+
+```ts
+import { sign } from "hono/jwt";
+
+// e.g. app/api/refund-token/route.ts
+export async function POST(req: Request) {
+  const session = await getSession(req);          // your auth, not ours
+  if (!session) return new Response("Unauthorized", { status: 401 });
+
+  const { chain, txHash, account, token, destination } = await req.json();
+
+  return Response.json({
+    token: await sign(
+      {
+        recipient: session.depositRecipient,      // the one YOU passed the modal
+        destination,
+        chain,
+        txHash,
+        account,
+        token,
+        exp: Math.floor(Date.now() / 1000) + 60,
+      },
+      process.env.REFUND_TOKEN_SECRET!,
+      "HS256",
+    ),
+  });
+}
+```
+
+The browser then calls `POST /deposits/refund` on this proxy with the token in
+`x-user-token`. **The request body is ignored** — every field of the refund comes
+from the signed token, so the browser presents a credential rather than
+describing a refund it would like to happen.
+
+Responses: `401` (missing/invalid/expired token), `403` (the deposit isn't that
+recipient's), `404` (refunds not enabled), otherwise the processor's own response.
+
+### Notes
+
+- Bind the token to one specific refund, as above. A token carrying only an
+  identity is a bearer credential that can be spent on any destination.
+- Replay is handled upstream: the refund atomically claims the deposit out of
+  `failed`/`rejected`, so a replayed token finds nothing refundable rather than
+  paying twice.
+- `x-user-token` is sent only on this route, so clients on an older proxy see no
+  change to any other request's CORS preflight.
+- A user with a live token can refund to any destination they name. If your
+  threat model includes attacker-run JavaScript on your own page, gate unusual
+  destinations behind whatever step-up your auth stack already has — this proxy
+  can't tell the difference.
 
 ## Configuring your client (`/setup`)
 
