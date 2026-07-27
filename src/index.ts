@@ -277,10 +277,28 @@ if (REFUND_TOKEN_SECRET) {
         recipient: claims.destination,
       }),
     });
-    return new Response(await upstream.text(), {
-      status: upstream.status,
-      headers: JSON_HEADERS,
-    });
+
+    const text = await upstream.text();
+    if (!upstream.ok) {
+      return new Response(text, { status: upstream.status, headers: JSON_HEADERS });
+    }
+    // Report where the funds ACTUALLY went. The destination is whatever your
+    // app put in the token, which is not necessarily what the browser asked
+    // for — the processor doesn't echo it back, so without this the modal
+    // would show the user the address they typed rather than the one paid.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return new Response(text, { status: upstream.status, headers: JSON_HEADERS });
+    }
+    return new Response(
+      JSON.stringify({
+        ...(parsed as Record<string, unknown>),
+        destination: claims.destination,
+      }),
+      { status: upstream.status, headers: JSON_HEADERS },
+    );
   });
 }
 
