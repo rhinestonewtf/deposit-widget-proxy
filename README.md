@@ -26,7 +26,8 @@ derivation works when both run on the same host; override it otherwise.
 
 ## Proxied routes
 
-`POST /setup-account`, `POST /register`, `POST /quotes/preview`,
+`POST /setup-account`, `POST /register`, `POST /register-managed`,
+`POST /quotes/preview`,
 `POST /safe/withdraw`, `POST /polymarket/withdraw`,
 `POST /onramp/swapped/widget-url`, `POST /onramp/swapped/connect-url`,
 `GET /check/:address`, `GET /portfolio/:address`, `GET /portfolio/solana/:address`,

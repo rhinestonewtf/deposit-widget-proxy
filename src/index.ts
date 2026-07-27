@@ -33,6 +33,11 @@ const MODAL_VERSION_HEADER = "x-deposit-modal-version";
 const ROUTES = [
   ["post", "/setup-account"],
   ["post", "/register"],
+  // Service-managed account registration. The modal calls this instead of
+  // /setup-account + /register from v0.9.0 — omitting it 404s registration and
+  // the deposit flow is dead, not degraded. The older pair stays for accounts
+  // registered by earlier modal versions.
+  ["post", "/register-managed"],
   ["get", "/check/:address"],
   ["get", "/portfolio/:address"],
   ["get", "/portfolio/solana/:address"],
