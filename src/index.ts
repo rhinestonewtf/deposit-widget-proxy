@@ -23,6 +23,11 @@ if (!API_KEY) {
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
+// The deposit modal stamps its package version on every request. It has to be
+// in the CORS allow-list below or the browser preflight rejects it and every
+// modal request fails — not just the version reporting.
+const MODAL_VERSION_HEADER = "x-deposit-modal-version";
+
 // Each route is [method, path] forwarded to BACKEND_URL, or [method, path,
 // upstreamBase] to override the upstream for that route.
 const ROUTES = [
@@ -58,7 +63,7 @@ app.use(
   cors({
     origin: "*",
     allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "x-api-key"],
+    allowHeaders: ["Content-Type", "x-api-key", MODAL_VERSION_HEADER],
   }),
 );
 
@@ -80,6 +85,12 @@ for (const [method, path, upstreamBase] of ROUTES) {
     if (origin) headers.origin = origin;
     const referer = c.req.header("referer");
     if (referer) headers.referer = referer;
+    // Same rationale as origin/referer: relay the modal's version so the
+    // processor can report which modal version each client runs. Without it
+    // the processor only ever sees this proxy. Passed through unvalidated —
+    // the processor shape-checks and length-caps it before use.
+    const modalVersion = c.req.header(MODAL_VERSION_HEADER);
+    if (modalVersion) headers[MODAL_VERSION_HEADER] = modalVersion;
     const upstream = await fetch(`${base}${pathname}${search}`, {
       method: method.toUpperCase(),
       headers,
