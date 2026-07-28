@@ -6,7 +6,8 @@
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:contract": "bun test test/cex-protocol-fee-proxy.test.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

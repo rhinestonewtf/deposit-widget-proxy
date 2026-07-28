@@ -128,6 +128,24 @@ modal shows it rather than the address the user typed.
   destinations behind whatever step-up your auth stack already has — this proxy
   can't tell the difference.
 
+## CEX Connect protocol fee
+
+The deposit processor creates the dedicated CEX deposit address and applies the
+protocol fee. The modal echoes the displayed rate as
+`acceptedExchangeFeeBps`; this proxy forwards that request field, the
+processor's status code, the signed `connect-url` response, and the
+`connect-exchanges` catalog unchanged. Legacy callers that omit the acceptance
+field remain on the standard, fee-free delivery address. The fee is configured
+on the processor; no fee environment variable or address derivation belongs in
+this proxy.
+
+To sponsor the protocol fee for a source chain, include `protocolFee: "all"` in
+that chain's direct processor `POST /setup` configuration. Use `"none"` or omit
+the field to leave the fee user-paid.
+
+Run `bun run test:contract` to verify both CEX responses remain transparent
+through the proxy.
+
 ## Configuring your client (`/setup`)
 
 One-off admin call to enable gas sponsorship and/or webhook notifications for
@@ -159,6 +177,7 @@ Field values:
 
 - `gas`: `"all" | "none" | "deployed"` (`deployed` = only sponsor if smart account is already deployed)
 - `swap`, `bridging`: `"all" | "none"`
+- `protocolFee`: `"all" | "none"` (sponsor the CEX protocol fee when set to `"all"`)
 - Chain keys: CAIP-2 (`"eip155:<chainId>"`)
 - `webhookUrl`, `webhookSecret`: optional; set both to receive HMAC-signed events
 
