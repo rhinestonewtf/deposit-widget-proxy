@@ -18,7 +18,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-function captureProcessor(payload: unknown): ProcessorCall[] {
+function captureProcessor(payload: unknown, status = 200): ProcessorCall[] {
   const calls: ProcessorCall[] = [];
   globalThis.fetch = mock(
     (input: string | URL | Request, init: RequestInit = {}) => {
@@ -26,7 +26,7 @@ function captureProcessor(payload: unknown): ProcessorCall[] {
       calls.push({ url, init });
       return Promise.resolve(
         new Response(JSON.stringify(payload), {
-          status: 200,
+          status,
           headers: { "content-type": "application/json" },
         }),
       );
@@ -77,6 +77,7 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     const requestBody = {
       smartAccount: "0x0000000000000000000000000000000000000001",
       connection: "binance",
+      acceptedExchangeFeeBps: 35,
     };
 
     const response = await handler(
@@ -101,5 +102,31 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     expect(new Headers(calls[0]?.init.headers).get("origin")).toBe(
       "https://client.example",
     );
+  });
+
+  it("preserves a stale fee-acceptance conflict and the processor's current rate", async () => {
+    const payload = {
+      error: "The Exchange Fee changed",
+      exchangeFeeBps: 50,
+    };
+    const calls = captureProcessor(payload, 409);
+    const requestBody = {
+      smartAccount: "0x0000000000000000000000000000000000000001",
+      connection: "binance",
+      acceptedExchangeFeeBps: 35,
+    };
+
+    const response = await handler(
+      new Request("http://proxy.test/onramp/swapped/connect-url", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual(payload);
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0]?.init.body as string)).toEqual(requestBody);
   });
 });
