@@ -31,12 +31,18 @@ jobs:
         run: |
           SHORT_SHA=${GITHUB_SHA:0:7}
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - name: Build and push
         run: |
-          docker build -t $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} .
-          docker tag $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} $ECR_REGISTRY/$APP_NAME:latest
-          docker push $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }}
-          docker push $ECR_REGISTRY/$APP_NAME:latest
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            -t $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} \
+            -t $ECR_REGISTRY/$APP_NAME:latest \
+            --push .
 
   cd-pipeline:
     needs: build-and-push
