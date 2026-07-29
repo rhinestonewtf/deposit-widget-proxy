@@ -131,6 +131,16 @@ const ROUTES = [
   // off the browser-facing proxy. The processor never returns the signing
   // secret here (only `hasWebhookSecret`), so this is safe to expose.
   ["get", "/setup"],
+  // DeFi position migration. The holder's EOA owns the aTokens, so `unwind`
+  // returns UNSIGNED calldata that only that EOA can execute — the proxy is not
+  // handing out an executable action, and every guard that matters (recipient
+  // resolved from the registered account, amount capped against Aave's full
+  // withdraw validation, deposit policy refused before signature) is upstream.
+  // Note `unwind` needs a key with the `deposits:write` scope; a read-scoped key
+  // 403s here while /positions keeps working, which reads as a broken unwind
+  // rather than a misconfigured key.
+  ["get", "/positions/:address"],
+  ["post", "/positions/:address/unwind"],
   // Suggested source tokens for the QR / manual-transfer flow, filtered to what
   // this project's deposit whitelist actually accepts.
   ["get", "/qr/tokens"],
