@@ -1,6 +1,12 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { verify } from "hono/jwt";
+import {
+  createTrustedProxyCheck,
+  type EdgeConfig,
+  normalizeTrustedCountryHeader,
+  resolveEdgeSignals,
+} from "./geoip";
 
 const DEFAULT_BACKEND_URL =
   "https://v1.orchestrator.rhinestone.dev/deposit-processor";
@@ -31,6 +37,67 @@ const USER_TOKEN_HEADER = "x-user-token";
 // browser-reachable endpoint that spends its API key.
 const REFUND_TOKEN_SECRET = process.env.REFUND_TOKEN_SECRET?.trim();
 
+// --- Regional on-ramp localization (opt-in) --------------------------------
+//
+// Swapped shows different payment methods per country, and only this proxy can
+// see the end user — the processor sits behind it. Set ONE of:
+//
+//   TRUSTED_COUNTRY_HEADER=cf-ipcountry   your CDN already resolved the country
+//                                         (also x-vercel-ip-country,
+//                                         cloudfront-viewer-country, …)
+//   TRUSTED_PROXY_HOPS=<n>                we name the IP, the processor looks it
+//                                         up. 0 = nothing in front of this
+//                                         process; n>0 walks x-forwarded-for
+//                                         and needs TRUSTED_PROXY_CIDRS.
+//
+// Leave both unset and nothing is relayed: the modal shows a generic method set.
+// Getting TRUSTED_PROXY_HOPS wrong fails closed (no country), never open.
+const TRUSTED_COUNTRY_HEADER = normalizeTrustedCountryHeader(
+  process.env.TRUSTED_COUNTRY_HEADER,
+);
+const rawHops = process.env.TRUSTED_PROXY_HOPS?.trim();
+// Presence is the gate, so an unset value resolves no IP at all rather than
+// quietly defaulting to some topology that may not be yours.
+const TRUSTED_PROXY_HOPS = rawHops ? Number(rawHops) : undefined;
+if (
+  TRUSTED_PROXY_HOPS !== undefined &&
+  (!Number.isInteger(TRUSTED_PROXY_HOPS) || TRUSTED_PROXY_HOPS < 0)
+) {
+  throw new Error("TRUSTED_PROXY_HOPS must be a non-negative integer");
+}
+const isTrustedProxy = createTrustedProxyCheck(
+  process.env.TRUSTED_PROXY_CIDRS,
+);
+if (TRUSTED_PROXY_HOPS !== undefined && TRUSTED_PROXY_HOPS > 0 && !isTrustedProxy) {
+  throw new Error(
+    "TRUSTED_PROXY_HOPS > 0 requires TRUSTED_PROXY_CIDRS: without an allowlist any client could forge x-forwarded-for",
+  );
+}
+if (TRUSTED_COUNTRY_HEADER && !isTrustedProxy) {
+  throw new Error(
+    "TRUSTED_COUNTRY_HEADER requires TRUSTED_PROXY_CIDRS: without an allowlist any client could send that header directly",
+  );
+}
+const EDGE_CONFIG: EdgeConfig = {
+  countryHeader: TRUSTED_COUNTRY_HEADER,
+  trustedHops: TRUSTED_PROXY_HOPS,
+  isTrustedProxy,
+};
+const LOCALIZATION_ENABLED =
+  TRUSTED_COUNTRY_HEADER !== undefined || TRUSTED_PROXY_HOPS !== undefined;
+
+/** The socket peer address, which Bun exposes only via the server handle. */
+function directPeerIp(c: Context): string | undefined {
+  const server = (
+    c.env as
+      | {
+          server?: { requestIP?: (req: Request) => { address?: string } | null };
+        }
+      | undefined
+  )?.server;
+  return server?.requestIP?.(c.req.raw)?.address;
+}
+
 // Each route is [method, path], or [method, path, upstreamPath] when the
 // processor's path differs from the one the modal calls. Everything goes to
 // BACKEND_URL — this proxy has exactly one upstream.
@@ -51,6 +118,10 @@ const ROUTES = [
   ["post", "/quotes/preview"],
   ["post", "/safe/withdraw"],
   ["post", "/polymarket/withdraw"],
+  // Regional fiat method list. Localized from the country/IP resolved below —
+  // without that it returns the generic set, which is what it did while this
+  // route was missing from the proxy entirely.
+  ["get", "/onramp/swapped/payment-methods"],
   ["post", "/onramp/swapped/widget-url"],
   ["post", "/onramp/swapped/connect-url"],
   ["get", "/onramp/swapped/connect-exchanges"],
@@ -109,6 +180,18 @@ for (const [method, path, upstreamPath] of ROUTES) {
     // the processor shape-checks and length-caps it before use.
     const modalVersion = c.req.header(MODAL_VERSION_HEADER);
     if (modalVersion) headers[MODAL_VERSION_HEADER] = modalVersion;
+    // Regional on-ramp localization. Note these are SET here and never copied
+    // from the request: `headers` is built fresh, so a browser-supplied
+    // x-user-country / x-client-ip is dropped no matter what it sends. They are
+    // also absent from the CORS allow-list, so a browser can't even send them.
+    if (LOCALIZATION_ENABLED) {
+      const { country, clientIp } = resolveEdgeSignals(
+        { header: (name) => c.req.header(name), directIp: directPeerIp(c) },
+        EDGE_CONFIG,
+      );
+      if (country) headers["x-user-country"] = country;
+      else if (clientIp) headers["x-client-ip"] = clientIp;
+    }
     const upstream = await fetch(
       `${BACKEND_URL}${upstreamPath ?? pathname}${search}`,
       {
@@ -303,5 +386,10 @@ if (REFUND_TOKEN_SECRET) {
 
 export default {
   port: Number(process.env.PORT ?? 4000),
-  fetch: app.fetch,
+  // `server` is threaded into the Hono env because it is the only way to reach
+  // the socket peer address (`server.requestIP`), which the client-IP resolution
+  // needs. Without it every request looks like it came from nowhere.
+  fetch(request: Request, server?: unknown): Response | Promise<Response> {
+    return app.fetch(request, { server });
+  },
 };
