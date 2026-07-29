@@ -1,243 +1,183 @@
 # deposit-widget-proxy
 
-Minimal Bun + Hono proxy that forwards deposit modal requests to the Rhinestone
-deposit-service-processor. Keeps your API key server-side and adds it as
-`x-api-key` to every upstream call.
+The Rhinestone deposit widget runs in the browser, so it can't hold your
+Rhinestone API key. Every request it makes goes to a proxy **you** run, which
+attaches the key and forwards to the deposit processor.
 
-## Setup
+This is the proxy Rhinestone runs, packaged so you can deploy it as-is. It is a
+single Bun + Hono process: an explicit route table, a fresh upstream header set
+with `x-api-key` attached, and nothing else. If you'd rather write your own, the
+[minimal recipe](https://docs.rhinestone.dev/deposits/widget/backend) is about
+forty lines.
+
+New to the widget? Start with the
+[quickstart](https://docs.rhinestone.dev/deposits/widget/quickstart). This README
+covers only how to run and configure this service.
+
+## Quick start
 
 ```bash
 bun install
 RHINESTONE_API_KEY=your-key bun run dev
 ```
 
-Env vars:
+Or build the image — a compiled binary on distroless, no Bun in the final layer:
 
-| Name | Required | Default |
-|---|---|---|
-| `RHINESTONE_API_KEY` | yes | — |
-| `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` |
-| `REFUND_TOKEN_SECRET` | no | — (unset disables self-service refunds entirely) |
-| `TRUSTED_COUNTRY_HEADER` | no | — (see [regional payment methods](#regional-payment-methods)) |
-| `TRUSTED_PROXY_HOPS` | no | — (unset resolves no client IP) |
-| `TRUSTED_PROXY_CIDRS` | no | — (required by the two above) |
-| `PORT` | no | `4000` |
+```bash
+docker build -t deposit-widget-proxy .
+docker run -p 4000:4000 -e RHINESTONE_API_KEY=your-key deposit-widget-proxy
+```
 
-`REFUND_TOKEN_SECRET` opts into [self-service refunds](#self-service-refunds)
-and is inert until you set it.
+Point the modal's `backendUrl` at it and check `GET /health`.
 
-## Proxied routes
+## Configuration
 
-`POST /setup-account`, `POST /register`, `POST /register-managed`,
-`POST /quotes/preview`,
-`POST /safe/withdraw`, `POST /polymarket/withdraw`,
-`POST /onramp/swapped/widget-url`, `POST /onramp/swapped/connect-url`,
-`GET /check/:address`, `GET /portfolio/:address`, `GET /portfolio/solana/:address`,
-`GET /deposits`, `GET /liquidity`, `GET /prices`, `GET /setup`, `GET /qr/tokens`,
-`GET /onramp/swapped/payment-methods`,
-`GET /onramp/swapped/connect-exchanges`, `GET /onramp/swapped/status/:smartAccount`,
-`GET /health`.
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `RHINESTONE_API_KEY` | yes | — | Attached as `x-api-key` upstream. The process exits if it's unset |
+| `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` | The upstream processor |
+| `PORT` | no | `4000` | |
+| `REFUND_TOKEN_SECRET` | no | — | Opts into [self-service refunds](#self-service-refunds). Unset, that route does not exist |
+| `TRUSTED_COUNTRY_HEADER` | no | — | See [regional payment methods](#regional-payment-methods) |
+| `TRUSTED_PROXY_HOPS` | no | — | See [regional payment methods](#regional-payment-methods) |
+| `TRUSTED_PROXY_CIDRS` | no | — | Required by either of the two above |
 
-Clients call these without an API key — the proxy injects it. Every route goes to
-`DEPOSIT_SERVICE_URL`; there is no second upstream.
+## Routes
+
+Callers reach these without an API key — the proxy injects it. Everything goes to
+`DEPOSIT_SERVICE_URL`; there is one upstream.
+
+| Method | Route |
+|---|---|
+| `POST` | `/register-managed`, `/setup-account`, `/register` |
+| `POST` | `/quotes/preview` |
+| `POST` | `/safe/withdraw`, `/polymarket/withdraw` |
+| `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
+| `GET` | `/check/:address` |
+| `GET` | `/portfolio/:address`, `/portfolio/solana/:address` |
+| `GET` | `/deposits` |
+| `GET` | `/liquidity`, `/prices` |
+| `GET` | `/setup` |
+| `GET` | `/qr/tokens` |
+| `GET` | `/onramp/swapped/payment-methods`, `/onramp/swapped/connect-exchanges`, `/onramp/swapped/status/:smartAccount` |
+| `GET` | `/health` — liveness, answered locally |
+| `POST` | `/deposits/refund` — only when `REFUND_TOKEN_SECRET` is set |
 
 `GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
-0.9.x. It used to be served by a separate internal Rhinestone service, which is
-why `WIDGET_BACKEND_URL` existed — that variable is gone and setting it now has
-no effect.
+0.9.x.
 
-`POST /deposits/refund` is also available, but **only when `REFUND_TOKEN_SECRET`
-is set** — see below.
+A few deliberate omissions:
+
+- **`POST /setup` is not proxied.** It's an admin write that rotates your webhook
+  secret and sponsorship config, so it must not be reachable from a browser. Call
+  it directly against the processor — see
+  [initial setup](https://docs.rhinestone.dev/deposits/api/initial-setup). The
+  read, `GET /setup`, *is* proxied so the modal can load your config; it never
+  returns the signing secret, only `hasWebhookSecret`.
+- **No wildcard passthrough.** The route table is a security boundary, not
+  boilerplate: the proxy attaches your API key to whatever reaches it, so
+  `app.all("/*")` would hand the browser every write on the upstream.
+
+Request headers are never copied wholesale. The proxy builds a fresh set and
+relays only `origin`, `referer`, and `x-deposit-modal-version` — so a browser
+cannot inject `x-api-key`, or any of the trusted headers below.
 
 ## Regional payment methods
 
-Swapped offers different payment methods per country — GCash in the Philippines,
-PIX in Brazil, Apple Pay where it's supported. Picking the right set needs the
-**end user's** country, and this proxy is the only component that can see them:
-the deposit processor sits behind it and only ever observes this proxy's address.
+Fiat on-ramp methods vary by country, and this proxy is the only component that
+can see the end user: the processor sits behind it and only ever observes this
+proxy's address.
 
-You do **not** need a GeoIP database. The processor owns the lookup. This proxy
-only has to name what it observed, which takes one of two variables:
+You do **not** need a GeoIP database — the processor owns the lookup. This proxy
+only names what it observed, which takes one of two variables.
 
-**If you're behind a CDN that already resolves country** (Cloudflare, Vercel,
-CloudFront, Fastly, GCP), just forward its header — no lookup anywhere:
+**Behind a CDN that already resolves country** (Cloudflare, Vercel, CloudFront,
+Fastly, GCP), forward its header:
 
 ```
 TRUSTED_COUNTRY_HEADER=cf-ipcountry      # or x-vercel-ip-country,
 TRUSTED_PROXY_CIDRS=<your ingress CIDRs> # cloudfront-viewer-country, ...
 ```
 
-**Otherwise**, tell the proxy how many trusted proxies sit in front of it and it
-will relay the client IP for the processor to resolve:
+**Otherwise**, say how many trusted proxies sit in front of this process and it
+relays the client IP for the processor to resolve:
 
 ```
 TRUSTED_PROXY_HOPS=1                     # 0 = nothing in front of this process
-TRUSTED_PROXY_CIDRS=<your ingress CIDRs> # required whenever HOPS > 0
+TRUSTED_PROXY_CIDRS=<your ingress CIDRs>
 ```
 
-`TRUSTED_PROXY_CIDRS` is the load-bearing part, and it is why both variables
-require it: without an allowlist of the peers permitted to set forwarding
-headers, any browser could send `x-forwarded-for` or `cf-ipcountry` and choose
-its own region. The proxy refuses to start if you set either without it.
+`TRUSTED_PROXY_CIDRS` is why both variables require it: without an allowlist of
+the peers permitted to set forwarding headers, any browser could send
+`x-forwarded-for` or `cf-ipcountry` and choose its own region. The process
+**refuses to start** if you set either without it.
 
-Set neither and nothing is relayed — the modal shows a generic method set, which
-is the behaviour before this feature existed.
+Set neither and nothing is relayed — the modal shows a generic method set.
 
-Counting hops from the **right** is what makes a forged header inert: a browser
-can prepend anything to `x-forwarded-for`, but your ingress appends the address
-it actually saw. A malformed chain resolves to nothing rather than being
-"repaired", since dropping an entry shifts hop positions and could promote an
-attacker-controlled address into the client slot.
+Two properties worth knowing before you tune this:
 
-Whatever the browser sends, `x-user-country` and `x-client-ip` are always
-**overwritten** on the upstream request — the proxy builds a fresh header set,
-and neither header is in the CORS allow-list, so a browser cannot send them in
-the first place. Resolved country and IP are relayed but never logged.
+- Hops are counted from the **right**, which is what makes a forged header inert.
+  A browser can prepend anything to `x-forwarded-for`; your ingress appends the
+  address it actually saw.
+- A malformed chain resolves to nothing rather than being repaired. Dropping an
+  entry shifts hop positions and could promote an attacker-controlled address
+  into the client slot.
+
+Getting the configuration wrong costs you localization, never correctness: every
+path fails closed to the generic method set. Resolved country and IP are relayed
+upstream but never logged.
 
 ## Self-service refunds
 
-Lets a user recover a `failed` or `rejected` deposit themselves, instead of
-raising a support ticket. **Opt-in**: without `REFUND_TOKEN_SECRET` the route is
-never registered and nothing changes.
+Lets a user recover a `failed` or `rejected` deposit themselves. **Opt-in**:
+without `REFUND_TOKEN_SECRET` the route is never registered — a registration gate
+rather than a 401 inside the handler, so bumping the proxy version cannot
+silently expose an endpoint that spends your API key.
 
-### Why your app has to be involved
-
-Deposit accounts are owned by the Rhinestone service, so there is no user wallet
-that can sign for a refund — and when the deposit came from an exchange, the
-sender can't sign either. Whether a given deposit belongs to a given user is
-something **only your app knows**: it authenticated them, and it chose the
-`recipient` it passed to the modal.
-
-So your app vouches, by minting a short-lived token. This proxy verifies it,
+Whether a deposit belongs to a given user is something only your app knows, so
+your app vouches for it by minting a short-lived token; this proxy verifies it,
 confirms the deposit really does belong to that recipient, and only then spends
-your API key.
+your API key. For the reasoning, the modal props, and a worked example, see
+[claim modal](https://docs.rhinestone.dev/deposits/widget/claim-modal).
 
-### Minting a token
-
-Sign an HS256 JWT with `REFUND_TOKEN_SECRET` from an endpoint that requires a
-logged-in session. Every claim is required:
+The contract this proxy implements: an HS256 JWT signed with
+`REFUND_TOKEN_SECRET`, presented in `x-user-token`. Every claim is required.
 
 | Claim | Meaning |
 |---|---|
-| `recipient` | The user's in-app recipient — what the deposit is checked against. **Not** where the money goes. |
-| `destination` | Where the refunded funds are sent, on the deposit's source chain. |
-| `chain`, `txHash`, `account`, `token` | Identify the deposit, as returned by `GET /deposits`. |
-| `exp` | Required. Keep it short — 60s is plenty. |
+| `recipient` | The user's in-app recipient — what the deposit is checked against. **Not** where the money goes |
+| `destination` | Where the refunded funds are sent, on the deposit's source chain |
+| `chain`, `txHash`, `account`, `token` | Identify the deposit, as returned by `GET /deposits` |
+| `exp` | Required. Keep it short — 60s is plenty. A token without it is rejected |
 
-```ts
-import { sign } from "hono/jwt";
+**The request body is ignored.** Every field of the upstream refund comes from
+the signed token, so the browser presents a credential rather than describing a
+refund it would like to happen.
 
-// e.g. app/api/refund-token/route.ts
-export async function POST(req: Request) {
-  const session = await getSession(req);          // your auth, not ours
-  if (!session) return new Response("Unauthorized", { status: 401 });
+Responses are `401` (missing, invalid, or expired token), `403` (the deposit
+isn't that recipient's), `404` (refunds not enabled), otherwise the processor's
+own response plus a `destination` field reporting where the funds actually went —
+taken from the token, which need not match what the browser asked for.
 
-  const { chain, txHash, account, token, destination } = await req.json();
+Two notes:
 
-  return Response.json({
-    token: await sign(
-      {
-        recipient: session.depositRecipient,      // the one YOU passed the modal
-        destination,
-        chain,
-        txHash,
-        account,
-        token,
-        exp: Math.floor(Date.now() / 1000) + 60,
-      },
-      process.env.REFUND_TOKEN_SECRET!,
-      "HS256",
-    ),
-  });
-}
-```
-
-The browser then calls `POST /deposits/refund` on this proxy with the token in
-`x-user-token`. **The request body is ignored** — every field of the refund comes
-from the signed token, so the browser presents a credential rather than
-describing a refund it would like to happen.
-
-Responses: `401` (missing/invalid/expired token), `403` (the deposit isn't that
-recipient's), `404` (refunds not enabled), otherwise the processor's own response
-plus a `destination` field reporting where the funds were actually sent — that
-comes from the token, which need not match what the browser asked for, and the
-modal shows it rather than the address the user typed.
-
-### Notes
-
-- Bind the token to one specific refund, as above. A token carrying only an
-  identity is a bearer credential that can be spent on any destination.
+- Bind each token to one specific refund, as above. A token carrying only an
+  identity is a bearer credential spendable on any destination.
 - Replay is handled upstream: the refund atomically claims the deposit out of
   `failed`/`rejected`, so a replayed token finds nothing refundable rather than
   paying twice.
-- `x-user-token` is sent only on this route, so clients on an older proxy see no
-  change to any other request's CORS preflight.
-- A user with a live token can refund to any destination they name. If your
-  threat model includes attacker-run JavaScript on your own page, gate unusual
-  destinations behind whatever step-up your auth stack already has — this proxy
-  can't tell the difference.
 
-## CEX Connect protocol fee
-
-The deposit processor creates the dedicated CEX deposit address and applies the
-protocol fee. The modal echoes the displayed rate as
-`acceptedExchangeFeeBps`; this proxy forwards that request field, the
-processor's status code, the signed `connect-url` response, and the
-`connect-exchanges` catalog unchanged. Legacy callers that omit the acceptance
-field remain on the standard, fee-free delivery address. The fee is configured
-on the processor; no fee environment variable or address derivation belongs in
-this proxy.
-
-To sponsor the protocol fee for a source chain, include `protocolFee: "all"` in
-that chain's direct processor `POST /setup` configuration. Use `"none"` or omit
-the field to leave the fee user-paid.
-
-Run `bun run test:contract` to verify both CEX responses remain transparent
-through the proxy.
-
-## Configuring your client (`/setup`)
-
-One-off admin call to enable gas sponsorship and/or webhook notifications for
-your API key. **Optional** — the modal works without it, but users will pay all
-fees and no webhooks will fire.
-
-Only the write (`POST /setup`) goes to the processor directly — it rotates the
-webhook secret and sponsorship rules, so it must not sit behind the browser-facing
-proxy. (The read, `GET /setup`, *is* proxied so the modal can load your config;
-it never returns the signing secret, only `hasWebhookSecret`.)
+## Development
 
 ```bash
-curl -X POST https://v1.orchestrator.rhinestone.dev/deposit-processor/setup \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: $RHINESTONE_API_KEY" \
-  -d '{
-    "params": {
-      "webhookUrl": "https://yourapp.com/api/rhinestone-webhook",
-      "webhookSecret": "shared-secret-for-hmac",
-      "sponsorship": {
-        "eip155:8453": { "gas": "all", "swap": "all", "bridging": "all" },
-        "eip155:10":   { "gas": "deployed", "swap": "none", "bridging": "all" }
-      }
-    }
-  }'
+bun test          # spawns the proxy against a stub upstream; no network or key needed
+bun run typecheck
 ```
 
-Field values:
+The suites run the real process as a subprocess rather than importing the app,
+which is what lets them assert on the CORS preflight, the opt-in gates, and
+exactly which headers and query strings reach the upstream.
 
-- `gas`: `"all" | "none" | "deployed"` (`deployed` = only sponsor if smart account is already deployed)
-- `swap`, `bridging`: `"all" | "none"`
-- `protocolFee`: `"all" | "none"` (sponsor the CEX protocol fee when set to `"all"`)
-- Chain keys: CAIP-2 (`"eip155:<chainId>"`)
-- `webhookUrl`, `webhookSecret`: optional; set both to receive HMAC-signed events
+## License
 
-### Webhook delivery
-
-If `webhookUrl` is set, the processor POSTs every deposit event
-(`deposit-received`, `bridge-started`, `bridge-delayed`, `bridge-complete`,
-`bridge-failed`, `deposit-rejected`, `deposit-refunded`, `error`) to that URL.
-Signed with HMAC-SHA256 in
-`X-Webhook-Signature: sha256=<hex>` when `webhookSecret` is set.
-Fire-and-forget with 3 retries — your endpoint must be idempotent.
-
-Without `webhookUrl`, no webhooks fire. The modal doesn't need them — it polls
-`GET /deposits` directly.
+MIT — see [LICENSE](./LICENSE).
