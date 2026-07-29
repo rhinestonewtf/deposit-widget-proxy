@@ -1,5 +1,12 @@
 {
   "name": "deposit-widget-proxy",
+  "description": "Proxy that holds your Rhinestone API key and forwards Rhinestone deposit widget requests to the deposit processor",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rhinestonewtf/deposit-widget-proxy.git"
+  },
+  "homepage": "https://docs.rhinestone.dev/deposits/widget/backend",
   "private": true,
   "type": "module",
   "scripts": {
