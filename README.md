@@ -18,6 +18,9 @@ Env vars:
 | `RHINESTONE_API_KEY` | yes | — |
 | `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` |
 | `REFUND_TOKEN_SECRET` | no | — (unset disables self-service refunds entirely) |
+| `TRUSTED_COUNTRY_HEADER` | no | — (see [regional payment methods](#regional-payment-methods)) |
+| `TRUSTED_PROXY_HOPS` | no | — (unset resolves no client IP) |
+| `TRUSTED_PROXY_CIDRS` | no | — (required by the two above) |
 | `PORT` | no | `4000` |
 
 `REFUND_TOKEN_SECRET` opts into [self-service refunds](#self-service-refunds)
@@ -31,6 +34,7 @@ and is inert until you set it.
 `POST /onramp/swapped/widget-url`, `POST /onramp/swapped/connect-url`,
 `GET /check/:address`, `GET /portfolio/:address`, `GET /portfolio/solana/:address`,
 `GET /deposits`, `GET /liquidity`, `GET /prices`, `GET /setup`, `GET /qr/tokens`,
+`GET /onramp/swapped/payment-methods`,
 `GET /onramp/swapped/connect-exchanges`, `GET /onramp/swapped/status/:smartAccount`,
 `GET /health`.
 
@@ -44,6 +48,51 @@ no effect.
 
 `POST /deposits/refund` is also available, but **only when `REFUND_TOKEN_SECRET`
 is set** — see below.
+
+## Regional payment methods
+
+Swapped offers different payment methods per country — GCash in the Philippines,
+PIX in Brazil, Apple Pay where it's supported. Picking the right set needs the
+**end user's** country, and this proxy is the only component that can see them:
+the deposit processor sits behind it and only ever observes this proxy's address.
+
+You do **not** need a GeoIP database. The processor owns the lookup. This proxy
+only has to name what it observed, which takes one of two variables:
+
+**If you're behind a CDN that already resolves country** (Cloudflare, Vercel,
+CloudFront, Fastly, GCP), just forward its header — no lookup anywhere:
+
+```
+TRUSTED_COUNTRY_HEADER=cf-ipcountry      # or x-vercel-ip-country,
+TRUSTED_PROXY_CIDRS=<your ingress CIDRs> # cloudfront-viewer-country, ...
+```
+
+**Otherwise**, tell the proxy how many trusted proxies sit in front of it and it
+will relay the client IP for the processor to resolve:
+
+```
+TRUSTED_PROXY_HOPS=1                     # 0 = nothing in front of this process
+TRUSTED_PROXY_CIDRS=<your ingress CIDRs> # required whenever HOPS > 0
+```
+
+`TRUSTED_PROXY_CIDRS` is the load-bearing part, and it is why both variables
+require it: without an allowlist of the peers permitted to set forwarding
+headers, any browser could send `x-forwarded-for` or `cf-ipcountry` and choose
+its own region. The proxy refuses to start if you set either without it.
+
+Set neither and nothing is relayed — the modal shows a generic method set, which
+is the behaviour before this feature existed.
+
+Counting hops from the **right** is what makes a forged header inert: a browser
+can prepend anything to `x-forwarded-for`, but your ingress appends the address
+it actually saw. A malformed chain resolves to nothing rather than being
+"repaired", since dropping an entry shifts hop positions and could promote an
+attacker-controlled address into the client slot.
+
+Whatever the browser sends, `x-user-country` and `x-client-ip` are always
+**overwritten** on the upstream request — the proxy builds a fresh header set,
+and neither header is in the CORS allow-list, so a browser cannot send them in
+the first place. Resolved country and IP are relayed but never logged.
 
 ## Self-service refunds
 
