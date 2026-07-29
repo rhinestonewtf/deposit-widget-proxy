@@ -17,13 +17,8 @@ Env vars:
 |---|---|---|
 | `RHINESTONE_API_KEY` | yes | — |
 | `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` |
-| `WIDGET_BACKEND_URL` | no | `DEPOSIT_SERVICE_URL` with `/deposit-processor` → `/deposit-widget` |
 | `REFUND_TOKEN_SECRET` | no | — (unset disables self-service refunds entirely) |
 | `PORT` | no | `4000` |
-
-`WIDGET_BACKEND_URL` is only used for `GET /tokens` (the static QR-flow token
-catalog is served by deposit-widget-backend, not the processor). The default
-derivation works when both run on the same host; override it otherwise.
 
 `REFUND_TOKEN_SECRET` opts into [self-service refunds](#self-service-refunds)
 and is inert until you set it.
@@ -35,12 +30,17 @@ and is inert until you set it.
 `POST /safe/withdraw`, `POST /polymarket/withdraw`,
 `POST /onramp/swapped/widget-url`, `POST /onramp/swapped/connect-url`,
 `GET /check/:address`, `GET /portfolio/:address`, `GET /portfolio/solana/:address`,
-`GET /deposits`, `GET /liquidity`, `GET /prices`, `GET /setup`, `GET /tokens`,
+`GET /deposits`, `GET /liquidity`, `GET /prices`, `GET /setup`, `GET /qr/tokens`,
 `GET /onramp/swapped/connect-exchanges`, `GET /onramp/swapped/status/:smartAccount`,
 `GET /health`.
 
-Clients call these without an API key — the proxy injects it. `GET /tokens` is
-forwarded to `WIDGET_BACKEND_URL`; everything else goes to `DEPOSIT_SERVICE_URL`.
+Clients call these without an API key — the proxy injects it. Every route goes to
+`DEPOSIT_SERVICE_URL`; there is no second upstream.
+
+`GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
+0.9.x. It used to be served by a separate internal Rhinestone service, which is
+why `WIDGET_BACKEND_URL` existed — that variable is gone and setting it now has
+no effect.
 
 `POST /deposits/refund` is also available, but **only when `REFUND_TOKEN_SECRET`
 is set** — see below.
