@@ -53,7 +53,9 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `POST` | `/quotes/preview` |
 | `POST` | `/safe/withdraw`, `/polymarket/withdraw` |
 | `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
+| `POST` | `/positions/:address/unwind` |
 | `GET` | `/check/:address` |
+| `GET` | `/positions/:address` |
 | `GET` | `/portfolio/:address`, `/portfolio/solana/:address` |
 | `GET` | `/deposits` |
 | `GET` | `/liquidity`, `/prices` |
@@ -62,6 +64,10 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/onramp/swapped/payment-methods`, `/onramp/swapped/connect-exchanges`, `/onramp/swapped/status/:smartAccount` |
 | `GET` | `/health` — liveness, answered locally |
 | `POST` | `/deposits/refund` — only when `REFUND_TOKEN_SECRET` is set |
+
+`POST /positions/:address/unwind` needs an API key carrying the `deposits:write`
+scope. A read-only key still serves `GET /positions/:address`, so the symptom of
+the wrong scope is an unwind that 403s while the position list looks healthy.
 
 `GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
 0.9.x.
