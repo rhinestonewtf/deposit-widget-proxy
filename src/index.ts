@@ -1,6 +1,5 @@
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
-import { verify } from "hono/jwt";
 import {
   createTrustedProxyCheck,
   type EdgeConfig,
@@ -25,17 +24,6 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 // in the CORS allow-list below or the browser preflight rejects it and every
 // modal request fails — not just the version reporting.
 const MODAL_VERSION_HEADER = "x-deposit-modal-version";
-
-// Self-service refunds: the modal presents a token your app minted for the
-// signed-in user. Sent ONLY on POST /deposits/refund, never the other routes,
-// so a client still running an older proxy sees no preflight change.
-const USER_TOKEN_HEADER = "x-user-token";
-
-// Opt-in. When this is unset the refund route is never registered at all —
-// deliberately a registration gate rather than a 401 inside the handler, so a
-// deployment that merely bumps the proxy version cannot silently acquire a
-// browser-reachable endpoint that spends its API key.
-const REFUND_TOKEN_SECRET = process.env.REFUND_TOKEN_SECRET?.trim();
 
 // --- Regional on-ramp localization (opt-in) --------------------------------
 //
@@ -162,7 +150,6 @@ app.use(
       "Content-Type",
       "x-api-key",
       MODAL_VERSION_HEADER,
-      USER_TOKEN_HEADER,
     ],
   }),
 );
@@ -214,183 +201,6 @@ for (const [method, path, upstreamPath] of ROUTES) {
       status: upstream.status,
       headers: JSON_HEADERS,
     });
-  });
-}
-
-// --- Self-service refunds (opt-in) ---------------------------------------
-//
-// Managed deposit accounts are owned by the Rhinestone service, so there is no
-// user wallet that can sign for a refund, and for exchange-funded deposits the
-// sender cannot sign either. Entitlement is therefore something only YOUR app
-// can attest: it authenticated the user and it knows which in-app `recipient`
-// belongs to them.
-//
-// The split of responsibilities:
-//   your app   — authenticates the user, mints a short-lived token
-//   this proxy — verifies the token, checks the deposit really belongs to that
-//                recipient, then spends the API key
-//   processor  — atomically claims the deposit out of failed/rejected and pays
-//
-// Every field of the upstream call comes from the signed token; the request
-// body is ignored entirely. The browser presents a credential, it does not get
-// to describe the refund.
-
-interface RefundClaims {
-  /**
-   * The user's in-app recipient — what the deposit is checked against. NOT
-   * where the money goes. (The processor's own refund body confusingly calls
-   * the destination `recipient`; keep the two straight.)
-   */
-  recipient: string;
-  /** Destination for the refunded funds, on the deposit's source chain. */
-  destination: string;
-  chain: string;
-  txHash: string;
-  account: string;
-  token: string;
-}
-
-const REFUND_CLAIM_FIELDS = [
-  "recipient",
-  "destination",
-  "chain",
-  "txHash",
-  "account",
-  "token",
-] as const;
-
-/**
- * Case-insensitive only for 0x-hex (EVM addresses and tx hashes, which the
- * processor lowercases). Solana base58 is case-SENSITIVE, so it must compare
- * exactly or two distinct addresses could be treated as equal.
- */
-function sameIdentifier(a: string, b: string): boolean {
-  if (a === b) return true;
-  const isHex = (v: string) => /^0x[0-9a-fA-F]+$/.test(v);
-  return isHex(a) && isHex(b) && a.toLowerCase() === b.toLowerCase();
-}
-
-function parseRefundClaims(payload: unknown): RefundClaims | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const record = payload as Record<string, unknown>;
-  // A token with no `exp` never expires, which turns a one-shot authorization
-  // into a permanent bearer credential. Require it rather than trusting the
-  // minting app to have set one.
-  if (typeof record.exp !== "number") return null;
-  for (const field of REFUND_CLAIM_FIELDS) {
-    const value = record[field];
-    if (typeof value !== "string" || value.length === 0) return null;
-  }
-  return Object.fromEntries(
-    REFUND_CLAIM_FIELDS.map((field) => [field, record[field]]),
-  ) as unknown as RefundClaims;
-}
-
-if (REFUND_TOKEN_SECRET) {
-  app.post("/deposits/refund", async (c) => {
-    const userToken = c.req.header(USER_TOKEN_HEADER);
-    if (!userToken) {
-      return c.json({ error: "Missing user token" }, 401);
-    }
-
-    let claims: RefundClaims | null = null;
-    try {
-      // Algorithm pinned rather than read from the token header, so a token
-      // that declares a different `alg` can't talk us into verifying it a
-      // weaker way.
-      claims = parseRefundClaims(
-        await verify(userToken, REFUND_TOKEN_SECRET, "HS256"),
-      );
-    } catch {
-      // Bad signature, malformed token, or past `exp` — hono/jwt throws for all
-      // three. Collapsed to one response so a caller can't probe which.
-      return c.json({ error: "Invalid user token" }, 401);
-    }
-    if (!claims) {
-      return c.json({ error: "Invalid user token" }, 401);
-    }
-
-    const upstreamHeaders: Record<string, string> = {
-      ...JSON_HEADERS,
-      "x-api-key": API_KEY,
-    };
-
-    // Does this deposit actually belong to this user? `recipient` aggregates
-    // across every managed account that resolves to it, which matters because
-    // the account salt includes the target chain/token — one user legitimately
-    // has several accounts. Filtering by txHash too keeps this to a single page
-    // regardless of how many deposits they have. `includeSpam=true` is load
-    // bearing: it defaults to false, and spam-flagged `rejected` deposits are
-    // exactly the ones people need refunded.
-    const query = new URLSearchParams({
-      recipient: claims.recipient,
-      chain: claims.chain,
-      txHash: claims.txHash,
-      includeSpam: "true",
-    });
-    const lookup = await fetch(`${BACKEND_URL}/deposits?${query}`, {
-      headers: upstreamHeaders,
-    });
-    if (!lookup.ok) {
-      return new Response(await lookup.text(), {
-        status: lookup.status,
-        headers: JSON_HEADERS,
-      });
-    }
-    // `GET /deposits` returns the smart account as `depositAddress`; a list row
-    // has no `account` field at all. The refund body calls the same value
-    // `account`, so the names differ across the two calls by design.
-    const { deposits = [] } = (await lookup.json()) as {
-      deposits?: { depositAddress?: string; token?: string }[];
-    };
-    const owned = deposits.some(
-      (deposit) =>
-        deposit.depositAddress !== undefined &&
-        deposit.token !== undefined &&
-        sameIdentifier(deposit.depositAddress, claims.account) &&
-        sameIdentifier(deposit.token, claims.token),
-    );
-    if (!owned) {
-      return c.json({ error: "Forbidden" }, 403);
-    }
-
-    // `recipient` here is the processor's name for the DESTINATION. Replay is
-    // handled upstream: the refund atomically claims the deposit out of
-    // failed/rejected, so a token replayed inside its lifetime finds nothing
-    // refundable rather than paying twice.
-    const upstream = await fetch(`${BACKEND_URL}/deposits/refund`, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: JSON.stringify({
-        chain: claims.chain,
-        txHash: claims.txHash,
-        account: claims.account,
-        token: claims.token,
-        recipient: claims.destination,
-      }),
-    });
-
-    const text = await upstream.text();
-    if (!upstream.ok) {
-      return new Response(text, { status: upstream.status, headers: JSON_HEADERS });
-    }
-    // Report where the funds ACTUALLY went. The destination is whatever your
-    // app put in the token, which is not necessarily what the browser asked
-    // for — the processor doesn't echo it back, so without this the modal
-    // would show the user the address they typed rather than the one paid.
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return new Response(text, { status: upstream.status, headers: JSON_HEADERS });
-    }
-    return new Response(
-      JSON.stringify({
-        ...(parsed as Record<string, unknown>),
-        destination: claims.destination,
-      }),
-      { status: upstream.status, headers: JSON_HEADERS },
-    );
   });
 }
 
