@@ -37,7 +37,6 @@ Point the modal's `backendUrl` at it and check `GET /health`.
 | `RHINESTONE_API_KEY` | yes | — | Attached as `x-api-key` upstream. The process exits if it's unset |
 | `DEPOSIT_SERVICE_URL` | no | `https://v1.orchestrator.rhinestone.dev/deposit-processor` | The upstream processor |
 | `PORT` | no | `4000` | |
-| `REFUND_TOKEN_SECRET` | no | — | Opts into [self-service refunds](#self-service-refunds). Unset, that route does not exist |
 | `TRUSTED_COUNTRY_HEADER` | no | — | See [regional payment methods](#regional-payment-methods) |
 | `TRUSTED_PROXY_HOPS` | no | — | See [regional payment methods](#regional-payment-methods) |
 | `TRUSTED_PROXY_CIDRS` | no | — | Required by either of the two above |
@@ -63,7 +62,6 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/qr/tokens` |
 | `GET` | `/onramp/swapped/payment-methods`, `/onramp/swapped/connect-exchanges`, `/onramp/swapped/status/:smartAccount` |
 | `GET` | `/health` — liveness, answered locally |
-| `POST` | `/deposits/refund` — only when `REFUND_TOKEN_SECRET` is set |
 
 `POST /positions/:address/unwind` needs an API key carrying the `deposits:write`
 scope. A read-only key still serves `GET /positions/:address`, so the symptom of
@@ -133,45 +131,19 @@ Getting the configuration wrong costs you localization, never correctness: every
 path fails closed to the generic method set. Resolved country and IP are relayed
 upstream but never logged.
 
-## Self-service refunds
+## Refunds are not proxied
 
-Lets a user recover a `failed` or `rejected` deposit themselves. **Opt-in**:
-without `REFUND_TOKEN_SECRET` the route is never registered — a registration gate
-rather than a 401 inside the handler, so bumping the proxy version cannot
-silently expose an endpoint that spends your API key.
+`POST /deposits/refund` moves money to an address the caller names, and only your
+app knows which of its users a deposit belongs to. That decision cannot be made
+here — this proxy authenticates nobody — so the route is deliberately absent
+rather than gated behind a flag.
 
-Whether a deposit belongs to a given user is something only your app knows, so
-your app vouches for it by minting a short-lived token; this proxy verifies it,
-confirms the deposit really does belong to that recipient, and only then spends
-your API key. For the reasoning, the modal props, and a worked example, see
-[claim modal](https://docs.rhinestone.dev/deposits/widget/claim-modal).
-
-The contract this proxy implements: an HS256 JWT signed with
-`REFUND_TOKEN_SECRET`, presented in `x-user-token`. Every claim is required.
-
-| Claim | Meaning |
-|---|---|
-| `recipient` | The user's in-app recipient — what the deposit is checked against. **Not** where the money goes |
-| `destination` | Where the refunded funds are sent, on the deposit's source chain |
-| `chain`, `txHash`, `account`, `token` | Identify the deposit, as returned by `GET /deposits` |
-| `exp` | Required. Keep it short — 60s is plenty. A token without it is rejected |
-
-**The request body is ignored.** Every field of the upstream refund comes from
-the signed token, so the browser presents a credential rather than describing a
-refund it would like to happen.
-
-Responses are `401` (missing, invalid, or expired token), `403` (the deposit
-isn't that recipient's), `404` (refunds not enabled), otherwise the processor's
-own response plus a `destination` field reporting where the funds actually went —
-taken from the token, which need not match what the browser asked for.
-
-Two notes:
-
-- Bind each token to one specific refund, as above. A token carrying only an
-  identity is a bearer credential spendable on any destination.
-- Replay is handled upstream: the refund atomically claims the deposit out of
-  `failed`/`rejected`, so a replayed token finds nothing refundable rather than
-  paying twice.
+Mount `createRefundHandler` from `@rhinestone/deposit-modal/server` in your own
+backend and let it call the processor directly; see
+[claim modal](https://docs.rhinestone.dev/deposits/widget/claim-modal). Replay is
+handled upstream either way: the refund atomically claims the deposit out of
+`failed`/`rejected`, so a repeat finds nothing refundable rather than paying
+twice.
 
 ## Development
 
