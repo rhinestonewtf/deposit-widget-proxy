@@ -53,6 +53,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `POST` | `/safe/withdraw`, `/polymarket/withdraw` |
 | `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
 | `POST` | `/positions/:address/unwind` |
+| `POST` | `/deposits/recover` |
 | `GET` | `/check/:address` |
 | `GET` | `/positions/:address` |
 | `GET` | `/portfolio/:address`, `/portfolio/solana/:address` |
@@ -131,18 +132,28 @@ Getting the configuration wrong costs you localization, never correctness: every
 path fails closed to the generic method set. Resolved country and IP are relayed
 upstream but never logged.
 
-## Refunds are not proxied
+## Recovery is proxied; refunds are not
 
-`POST /deposits/refund` moves money to an address the caller names, and only your
-app knows which of its users a deposit belongs to. That decision cannot be made
-here — this proxy authenticates nobody — so the route is deliberately absent
-rather than gated behind a flag.
+Two routes return a failed deposit's funds, and only one of them can live here.
 
-Mount `createRefundHandler` from `@rhinestone/deposit-modal/server` in your own
-backend and let it call the processor directly; see
-[claim modal](https://docs.rhinestone.dev/deposits/widget/claim-modal). Replay is
-handled upstream either way: the refund atomically claims the deposit out of
-`failed`/`rejected`, so a repeat finds nothing refundable rather than paying
+**`POST /deposits/recover` is proxied**, with no secret and nothing to opt into.
+The authorization is the deposit recipient's EIP-712 signature over the deposit id
+and the destination, verified upstream against that row's `recipient`. The API key
+this proxy attaches grants nothing on its own, so a caller who reaches the route
+without a valid signature gains nothing — which is what makes it safe to hand to a
+browser. This is the claim path to use if you have no backend of your own.
+
+**`POST /deposits/refund` is not proxied.** It moves money to an address the caller
+names, authorized by the API key alone, and only your app knows which of its users
+a deposit belongs to. This proxy authenticates nobody, so it cannot make that call;
+the route is deliberately absent rather than gated behind a flag. Mount
+`createRefundHandler` from `@rhinestone/deposit-modal/server` in your own backend
+and let it call the processor directly — that is the path for custom authorization,
+or for users whose recipient wallet cannot sign.
+
+See [claim modal](https://docs.rhinestone.dev/deposits/widget/claim-modal) for both.
+Replay is handled upstream either way: the refund atomically claims the deposit out
+of `failed`/`rejected`, so a repeat finds nothing refundable rather than paying
 twice.
 
 ## Development

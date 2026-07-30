@@ -101,6 +101,15 @@ const ROUTES = [
   ["get", "/portfolio/:address"],
   ["get", "/portfolio/solana/:address"],
   ["get", "/deposits"],
+  // Self-service recovery of a failed deposit. Safe to expose to a browser with
+  // no secret and no opt-in gate, unlike the refund route this replaces: the
+  // authorization is the deposit recipient's signature over the deposit id and
+  // destination, not the API key. Attaching the key to an unsigned call here
+  // achieves nothing, so there is no privilege for a caller to borrow.
+  //
+  // The refund route, by contrast, takes a destination from whoever asks, which
+  // is why it is not proxied at all — see "Refunds are not proxied" in the README.
+  ["post", "/deposits/recover"],
   ["get", "/liquidity"],
   ["get", "/prices"],
   ["post", "/quotes/preview"],
