@@ -67,10 +67,18 @@ jobs:
 
           DISPATCH_TS=$(date -u +%s)
 
+          # One image, two ArgoCD Applications running it with different values:
+          # `deposit-proxy` is Rhinestone's own instance (dev + staging + prod) and
+          # `deposit-widget-proxy` is a client's tenant on their own API key, prod only.
+          # Dispatch OURS — the pipeline chain starts at dev, so naming the prod-only
+          # tenant here failed at the first stage ("no values-dev.yaml") and never
+          # reached staging, prod or the approval gate. infra's cd-pipeline fans
+          # `deposit-proxy` out to both tenants at the prod stage, so this one dispatch
+          # still ships the client the identical image under the same approval.
           gh workflow run aws-cd-pipeline.yaml \
             --repo rhinestonewtf/infra \
             --ref main \
-            --field app_name=deposit-widget-proxy \
+            --field app_name=deposit-proxy \
             --field version_sha=${{ needs.build-and-push.outputs.short_sha }}
 
           echo "Waiting for run to be created..."
