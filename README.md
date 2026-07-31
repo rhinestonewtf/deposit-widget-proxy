@@ -64,9 +64,10 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/onramp/swapped/payment-methods`, `/onramp/swapped/connect-exchanges`, `/onramp/swapped/status/:smartAccount` |
 | `GET` | `/health` — liveness, answered locally |
 
-`POST /positions/:address/unwind` needs an API key carrying the `deposits:write`
-scope. A read-only key still serves `GET /positions/:address`, so the symptom of
-the wrong scope is an unwind that 403s while the position list looks healthy.
+Both `/positions` routes are served by a `deposits:read` key. `unwind` writes
+nothing — it returns an **unsigned** transaction that only the position holder's
+wallet can execute — so this proxy needs no elevated credential to offer position
+migration.
 
 `GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
 0.9.x.
