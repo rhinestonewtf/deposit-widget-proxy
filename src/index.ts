@@ -138,6 +138,12 @@ const ROUTES = [
   // rather than a misconfigured key.
   ["get", "/positions/:address"],
   ["post", "/positions/:address/unwind"],
+  // The authoritative chain set: per-chain display metadata plus the
+  // deposit/destination/refund capability flags, read at runtime. Proxying it
+  // is what lets a new chain reach the picker with no modal release — omit it
+  // and the modal pins itself to its bundled table, so every chain newer than
+  // the installed version is invisible rather than broken.
+  ["get", "/chains"],
   // Suggested source tokens for the QR / manual-transfer flow, filtered to what
   // this project's deposit whitelist actually accepts.
   ["get", "/qr/tokens"],
