@@ -60,6 +60,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/deposits` |
 | `GET` | `/liquidity`, `/prices` |
 | `GET` | `/setup` |
+| `GET` | `/chains` |
 | `GET` | `/qr/tokens` |
 | `GET` | `/onramp/swapped/payment-methods`, `/onramp/swapped/connect-exchanges`, `/onramp/swapped/status/:smartAccount` |
 | `GET` | `/health` — liveness, answered locally |
@@ -71,6 +72,10 @@ migration.
 
 `GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
 0.9.x.
+
+`GET /chains` is the chain set and its capability flags. Missing it degrades
+quietly rather than breaking: the modal falls back to the table bundled in its
+own version, so chains added since that release simply never appear.
 
 A few deliberate omissions:
 
