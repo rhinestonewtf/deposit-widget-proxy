@@ -50,6 +50,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 |---|---|
 | `POST` | `/register-managed`, `/setup-account`, `/register` |
 | `POST` | `/quotes/preview` |
+| `POST` | `/deposits/permit/prepare`, `/deposits/permit` |
 | `POST` | `/safe/withdraw`, `/polymarket/withdraw` |
 | `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
 | `POST` | `/positions/:address/unwind` |
@@ -72,6 +73,13 @@ migration.
 
 `GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
 0.9.x.
+
+The `/deposits/permit` pair is the gasless permit-deposit flow: `prepare` returns
+the EIP-712 payload the wallet signs and `permit` submits that signature. The
+processor requires deposits write scope for both routes and verifies the
+owner's signature over the exact transfer tuple before any funds can move. The
+feature is also gated per project on the processor, so deployments whose
+project isn't enrolled get a 4xx.
 
 `GET /chains` is the chain set and its capability flags. Missing it degrades
 quietly rather than breaking: the modal falls back to the table bundled in its

@@ -113,6 +113,13 @@ const ROUTES = [
   ["get", "/liquidity"],
   ["get", "/prices"],
   ["post", "/quotes/preview"],
+  // Gasless permit deposits. `prepare` returns typed data + an allowance check;
+  // `permit` moves funds only with the owner's EIP-712 signature over the exact
+  // (account, token, amount, nonce, deadline) tuple. The processor requires
+  // deposits write scope for both and additionally gates enrollment per project
+  // (PERMIT_DEPOSITS_PROJECT_IDS).
+  ["post", "/deposits/permit/prepare"],
+  ["post", "/deposits/permit"],
   ["post", "/safe/withdraw"],
   ["post", "/polymarket/withdraw"],
   // Regional fiat method list. Localized from the country/IP resolved below —
