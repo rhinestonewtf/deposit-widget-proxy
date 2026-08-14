@@ -1,0 +1,25 @@
+version: 0.2
+# Runs on the arm64 CodeBuild project (ARM_CONTAINER, native). This repo has never
+# published an arm64 image before (release-aws.yaml was amd64-only, no buildx/QEMU).
+# `bun build --compile --target=bun` (no OS/arch suffix) compiles for the host it
+# runs on, so a native arm64 CodeBuild machine produces a native arm64 binary with
+# no build-arg needed — confirmed locally (amd64 host produced an x86-64 ELF binary
+# with zero extra flags), unlike Go/CGO repos which need an explicit TARGETARCH.
+
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  build:
+    commands:
+      # Retries: oven/bun has no ECR public mirror (RHI-5627), see buildspec-amd64.yml.
+      - |
+        for i in 1 2 3; do
+          docker build -t "$ECR_REGISTRY/$APP_NAME:$IMAGE_TAG-arm64" . && break
+          [ "$i" -eq 3 ] && { echo "docker build failed after 3 attempts" >&2; exit 1; }
+          echo "docker build failed (attempt $i/3), retrying in 10s..." >&2
+          sleep 10
+        done
+  post_build:
+    commands:
+      - docker push "$ECR_REGISTRY/$APP_NAME:$IMAGE_TAG-arm64"

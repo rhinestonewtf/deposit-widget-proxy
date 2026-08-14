@@ -1,0 +1,25 @@
+version: 0.2
+# Runs on the amd64 CodeBuild project (terraform-aws/modules/codebuild-image-builder,
+# environments/shared/codebuild-deposit-widget-proxy.tf in rhinestonewtf/infra). Builds
+# and pushes the image natively, no QEMU.
+
+phases:
+  pre_build:
+    commands:
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  build:
+    commands:
+      # Retries: oven/bun has no ECR public mirror (RHI-5627), so CodeBuild's
+      # shared NAT egress IPs are exposed to Docker Hub's anonymous pull rate
+      # limit — confirmed tripping for real on deposit-service-processor,
+      # 2026-08-13, same base image.
+      - |
+        for i in 1 2 3; do
+          docker build -t "$ECR_REGISTRY/$APP_NAME:$IMAGE_TAG-amd64" . && break
+          [ "$i" -eq 3 ] && { echo "docker build failed after 3 attempts" >&2; exit 1; }
+          echo "docker build failed (attempt $i/3), retrying in 10s..." >&2
+          sleep 10
+        done
+  post_build:
+    commands:
+      - docker push "$ECR_REGISTRY/$APP_NAME:$IMAGE_TAG-amd64"
