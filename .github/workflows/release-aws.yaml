@@ -4,7 +4,16 @@
 #
 # This repository is public, which makes its Actions logs public too. Registry and
 # role therefore come from secrets so their values are masked in log output, and
-# mask-aws-account-id keeps the bare account ID out of the AWS steps.
+# mask-aws-account-id keeps the bare account ID out of the AWS steps. This also
+# means the account ID must never be hardcoded literally in this file (unlike every
+# other RHI-5507 migration, which are all private repos) — the shared
+# aws-codebuild-release.yaml workflow (infra-workflows#9) masks its own account-ID
+# use for the same reason, since that job's logs run under this repo's Actions tab.
+#
+# RHI-5507: native per-arch builds on AWS CodeBuild instead of a GH-hosted
+# single-arch `docker build` (this repo never had a buildx/QEMU step — this is
+# also its first arm64 image). terraform-aws/modules/codebuild-image-builder,
+# environments/shared/codebuild-deposit-widget-proxy.tf in rhinestonewtf/infra.
 name: Push docker images to ECR and deploy
 
 on:
@@ -13,8 +22,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push:
-    name: Build and push docker image to AWS ECR
+  prepare:
+    name: Prepare build context and upload to S3
     if: github.repository == 'rhinestonewtf/deposit-widget-proxy'
     runs-on: ubuntu-latest
     permissions:
@@ -22,6 +31,8 @@ jobs:
       id-token: write
     outputs:
       short_sha: ${{ steps.set-tags.outputs.short_sha }}
+      tags: ${{ steps.set-tags.outputs.tags }}
+      skip_push: ${{ steps.check-exists.outputs.skip_push }}
     env:
       AWS_REGION: us-east-1
       ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
@@ -33,22 +44,97 @@ jobs:
           role-to-assume: ${{ secrets.ECR_PUSH_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           mask-aws-account-id: true
-      - id: login-ecr
-        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
       - name: Set Docker tags
         id: set-tags
         run: |
           SHORT_SHA=${GITHUB_SHA:0:7}
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
-      - name: Build and push
+          echo "tags=latest $SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this image already exists in ECR
+        id: check-exists
         run: |
-          docker build -t $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} .
-          docker tag $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }} $ECR_REGISTRY/$APP_NAME:latest
-          docker push $ECR_REGISTRY/$APP_NAME:${{ steps.set-tags.outputs.short_sha }}
-          docker push $ECR_REGISTRY/$APP_NAME:latest
+          if aws ecr describe-images --repository-name "$APP_NAME" --image-ids imageTag=${{ steps.set-tags.outputs.short_sha }} &>/dev/null; then
+            echo "Image $APP_NAME:${{ steps.set-tags.outputs.short_sha }} already exists in ECR, skipping build"
+            echo "skip_push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Derives the zip's exclude list from .dockerignore instead of hardcoding paths
+      # (Kevin, caught on the relayer migration, RHI-5507) — a hardcoded list would
+      # ship everything else .dockerignore keeps out of the image. This repo had no
+      # .dockerignore before this migration — added alongside it.
+      - name: Zip build context
+        if: steps.check-exists.outputs.skip_push == 'false'
+        run: |
+          set -euo pipefail
+          # `.dockerignore` and this zip are NOT the same thing (RHI-5507, deposit-service-processor
+          # #663): `.dockerignore` describes the context streamed to the docker daemon, where the
+          # Dockerfile is redundant — docker reads it separately — so listing it there is normal.
+          # The zip is the WORKING DIRECTORY CodeBuild unpacks and runs `docker build .` inside, so
+          # the Dockerfile has to survive, and `.dockerignore` itself has to survive for the daemon
+          # to keep applying it. Deriving one from the other without this carve-out is what broke
+          # deposit-service-processor's build with `open Dockerfile: no such file or directory`.
+          BUILD_ESSENTIAL=('Dockerfile' '.dockerignore')
+          EXCLUDES=('.git/*')
+          if [[ -f .dockerignore ]]; then
+            while IFS= read -r pattern; do
+              pattern="${pattern%$'\r'}"
+              [[ -z "$pattern" || "$pattern" == \#* ]] && continue
+              pattern="${pattern#./}"
+              pattern="${pattern#/}"
+              keep=false
+              for essential in "${BUILD_ESSENTIAL[@]}"; do
+                # Glob match, not exact-string: a pattern like `Dockerfile*` would
+                # exclude Dockerfile too, but wouldn't equal the literal string
+                # "Dockerfile" (Kevin, RHI-5507, caught on user-service).
+                [[ "$essential" == $pattern ]] && keep=true && break
+              done
+              [[ "$keep" == true ]] && continue
+              EXCLUDES+=("$pattern")
+              [[ "$pattern" != *'*'* ]] && EXCLUDES+=("$pattern/*")
+            done < .dockerignore
+          fi
+          ARGS=()
+          for e in "${EXCLUDES[@]}"; do ARGS+=(-x "$e"); done
+          zip -qr /tmp/build-context.zip . "${ARGS[@]}"
+
+          # The failure this replaces was silent until CodeBuild ran, minutes and one S3
+          # upload later. Assert here instead.
+          for essential in "${BUILD_ESSENTIAL[@]}"; do
+            if [[ -f "$essential" ]] && ! unzip -l /tmp/build-context.zip "$essential" >/dev/null 2>&1; then
+              echo "::error::$essential is missing from the build context zip; CodeBuild cannot build without it"
+              exit 1
+            fi
+          done
+
+      - name: Upload build context to S3
+        if: steps.check-exists.outputs.skip_push == 'false'
+        # SOURCE_BUCKET is derived from the (masked) ECR_REGISTRY secret rather than
+        # hardcoded, since this repo is public — see the mask-aws-account-id note above.
+        run: |
+          SOURCE_BUCKET="$APP_NAME-codebuild-source-${ECR_REGISTRY%%.*}"
+          aws s3 cp /tmp/build-context.zip "s3://$SOURCE_BUCKET/deposit-widget-proxy/${{ steps.set-tags.outputs.short_sha }}.zip"
+
+  codebuild:
+    name: Build, push and scan via CodeBuild
+    needs: prepare
+    if: github.repository == 'rhinestonewtf/deposit-widget-proxy'
+    permissions:
+      id-token: write
+    uses: rhinestonewtf/infra-workflows/.github/workflows/aws-codebuild-release.yaml@main
+    with:
+      app_name: deposit-widget-proxy
+      short_sha: ${{ needs.prepare.outputs.short_sha }}
+      tags: ${{ needs.prepare.outputs.tags }}
+      skip_push: ${{ needs.prepare.outputs.skip_push == 'true' }}
+      # This repo never had a scan step before — soft-fail so this migration adds
+      # visibility without introducing a new deploy-blocking gate as a side effect.
+      fail_on_critical: false
 
   cd-pipeline:
-    needs: build-and-push
+    needs: [prepare, codebuild]
     if: github.repository == 'rhinestonewtf/deposit-widget-proxy'
     runs-on: ubuntu-latest
     steps:
@@ -59,6 +145,7 @@ jobs:
           client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: rhinestonewtf
+          repositories: infra
       - name: Dispatch and watch cd-pipeline
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -79,7 +166,7 @@ jobs:
             --repo rhinestonewtf/infra \
             --ref main \
             --field app_name=deposit-proxy \
-            --field version_sha=${{ needs.build-and-push.outputs.short_sha }}
+            --field version_sha=${{ needs.prepare.outputs.short_sha }}
 
           echo "Waiting for run to be created..."
           sleep 8

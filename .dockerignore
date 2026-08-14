@@ -1,0 +1,9 @@
+.git
+.github
+test/
+*.test.ts
+.env
+.env.example
+CLAUDE.md
+README.md
+LICENSE
