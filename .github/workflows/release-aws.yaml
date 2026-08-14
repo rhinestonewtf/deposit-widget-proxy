@@ -6,14 +6,22 @@
 # role therefore come from secrets so their values are masked in log output, and
 # mask-aws-account-id keeps the bare account ID out of the AWS steps. This also
 # means the account ID must never be hardcoded literally in this file (unlike every
-# other RHI-5507 migration, which are all private repos) — the shared
-# aws-codebuild-release.yaml workflow (infra-workflows#9) masks its own account-ID
-# use for the same reason, since that job's logs run under this repo's Actions tab.
+# other RHI-5507 migration, which are all private repos).
 #
 # RHI-5507: native per-arch builds on AWS CodeBuild instead of a GH-hosted
 # single-arch `docker build` (this repo never had a buildx/QEMU step — this is
 # also its first arm64 image). terraform-aws/modules/codebuild-image-builder,
 # environments/shared/codebuild-deposit-widget-proxy.tf in rhinestonewtf/infra.
+#
+# The `codebuild` job below duplicates (rather than calls) infra-workflows'
+# shared aws-codebuild-release.yaml: GitHub does not allow a workflow in a
+# PUBLIC repository to call a reusable workflow hosted in a PRIVATE one — even
+# with that repo's Actions access set to "organization" — confirmed live via
+# `gh workflow run` here, which 422'd with "workflow was not found" for
+# `rhinestonewtf/infra-workflows/.../aws-codebuild-release.yaml@main` despite
+# the file existing and being fetchable via the API. So this job is a
+# self-contained inline copy, simplified for this repo's fixed amd64+arm64,
+# no-private-deps, soft-gate (fail_on_critical=false) case.
 name: Push docker images to ECR and deploy
 
 on:
@@ -121,17 +129,133 @@ jobs:
     name: Build, push and scan via CodeBuild
     needs: prepare
     if: github.repository == 'rhinestonewtf/deposit-widget-proxy'
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
-    uses: rhinestonewtf/infra-workflows/.github/workflows/aws-codebuild-release.yaml@main
-    with:
-      app_name: deposit-widget-proxy
-      short_sha: ${{ needs.prepare.outputs.short_sha }}
-      tags: ${{ needs.prepare.outputs.tags }}
-      skip_push: ${{ needs.prepare.outputs.skip_push == 'true' }}
-      # This repo never had a scan step before — soft-fail so this migration adds
-      # visibility without introducing a new deploy-blocking gate as a side effect.
-      fail_on_critical: false
+    env:
+      AWS_REGION: us-east-1
+      ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+      APP_NAME: deposit-widget-proxy
+      SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+      - id: login-ecr
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2
+
+      # Only needed for the (cheap, no-emulation) imagetools manifest-list step below —
+      # each arch already built natively on its own CodeBuild project.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Start per-arch CodeBuild builds
+        id: start-builds
+        if: needs.prepare.outputs.skip_push == 'false'
+        run: |
+          set -euo pipefail
+          # SOURCE_BUCKET is derived from the (masked) ECR_REGISTRY secret rather than
+          # hardcoded, since this repo is public — see the top-of-file note.
+          SOURCE_BUCKET="$APP_NAME-codebuild-source-${ECR_REGISTRY%%.*}"
+          SOURCE_LOCATION="$SOURCE_BUCKET/$APP_NAME/$SHORT_SHA.zip"
+          ENV_OVERRIDES=$(jq -cn \
+            --arg region "$AWS_REGION" \
+            --arg registry "$ECR_REGISTRY" \
+            --arg app "$APP_NAME" \
+            --arg tag "$SHORT_SHA" \
+            '[
+              {"name":"AWS_REGION","value":$region},
+              {"name":"ECR_REGISTRY","value":$registry},
+              {"name":"APP_NAME","value":$app},
+              {"name":"IMAGE_TAG","value":$tag}
+            ]')
+          ALL_IDS=""
+          for arch in amd64 arm64; do
+            project="$APP_NAME-$arch"
+            build_id=$(aws codebuild start-build \
+              --project-name "$project" \
+              --source-location-override "$SOURCE_LOCATION" \
+              --buildspec-override "buildspec-$arch.yml" \
+              --environment-variables-override "$ENV_OVERRIDES" \
+              --query 'build.id' --output text)
+            echo "Started $project: $build_id"
+            ALL_IDS="$ALL_IDS $build_id"
+          done
+          echo "build_ids=$ALL_IDS" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for CodeBuild builds
+        if: needs.prepare.outputs.skip_push == 'false'
+        run: |
+          set -euo pipefail
+          ids="${{ steps.start-builds.outputs.build_ids }}"
+          echo "Waiting on: $ids"
+          statuses=""
+          while true; do
+            statuses=$(aws codebuild batch-get-builds --ids $ids --query 'builds[].buildStatus' --output text)
+            echo "Statuses: $statuses"
+            [[ "$statuses" != *IN_PROGRESS* ]] && break
+            sleep 15
+          done
+          for status in $statuses; do
+            if [[ "$status" != "SUCCEEDED" ]]; then
+              echo "One or more CodeBuild builds did not succeed: $statuses" >&2
+              aws codebuild batch-get-builds --ids $ids --query 'builds[].[id,buildStatus,logs.deepLink]' --output table
+              exit 1
+            fi
+          done
+
+      - name: Create multi-arch manifest
+        if: needs.prepare.outputs.skip_push == 'false'
+        run: |
+          set -euo pipefail
+          for TAG in ${{ needs.prepare.outputs.tags }}; do
+            docker buildx imagetools create \
+              -t "$ECR_REGISTRY/$APP_NAME:$TAG" \
+              "$ECR_REGISTRY/$APP_NAME:$SHORT_SHA-amd64" \
+              "$ECR_REGISTRY/$APP_NAME:$SHORT_SHA-arm64"
+          done
+
+      - name: Install trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+
+      # Scans only the base runtime image's immutable per-arch tags, never the
+      # multi-arch manifest tag (pulling a manifest list on this amd64 runner
+      # silently resolves to just the amd64 image) — RHI-5507,
+      # deposit-service-processor#653.
+      - name: Scan images (Trivy)
+        run: |
+          set -euo pipefail
+          for ARCH in amd64 arm64; do
+            trivy image \
+              --format json \
+              --output "trivy-base-$ARCH.json" \
+              --ignore-unfixed \
+              --severity CRITICAL,HIGH,MEDIUM,LOW \
+              --exit-code 0 \
+              "$ECR_REGISTRY/$APP_NAME:$SHORT_SHA-$ARCH"
+          done
+
+      # This repo never had a scan step before — soft-fail (report only, never block)
+      # so this migration adds visibility without introducing a new deploy-blocking
+      # gate as a side effect.
+      - name: Report Trivy findings
+        run: |
+          set -euo pipefail
+          for FILE in trivy-*.json; do
+            echo "## Trivy image scan summary ($FILE)" | tee -a "$GITHUB_STEP_SUMMARY"
+            jq -r '
+              [.Results[]?.Vulnerabilities[]?.Severity] | group_by(.) | map("\(.[0]): \(length)") | .[]
+            ' "$FILE" | tee -a "$GITHUB_STEP_SUMMARY" || echo "no vulnerabilities found"
+          done
+
+      - name: Upload Trivy reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-image-report
+          path: trivy-*.json
 
   cd-pipeline:
     needs: [prepare, codebuild]
