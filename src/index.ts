@@ -113,6 +113,13 @@ const ROUTES = [
   ["get", "/liquidity"],
   ["get", "/prices"],
   ["post", "/quotes/preview"],
+  // Gasless token-authorized deposits. `prepare` selects ERC-3009, ERC-2612,
+  // or Permit2 and returns the typed data; `permit` submits the signature plus
+  // the selected scheme's primitive replay/window fields. The processor
+  // reconstructs and verifies the payload, requires deposits write scope, and
+  // retains a global emergency kill switch for the additive endpoints.
+  ["post", "/deposits/permit/prepare"],
+  ["post", "/deposits/permit"],
   ["post", "/safe/withdraw"],
   ["post", "/polymarket/withdraw"],
   // Regional fiat method list. Localized from the country/IP resolved below —

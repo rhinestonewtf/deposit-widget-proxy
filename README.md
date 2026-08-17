@@ -50,6 +50,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 |---|---|
 | `POST` | `/register-managed`, `/setup-account`, `/register` |
 | `POST` | `/quotes/preview` |
+| `POST` | `/deposits/permit/prepare`, `/deposits/permit` |
 | `POST` | `/safe/withdraw`, `/polymarket/withdraw` |
 | `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
 | `POST` | `/positions/:address/unwind` |
@@ -72,6 +73,14 @@ migration.
 
 `GET /tokens` is kept as an alias of `GET /qr/tokens` for modal versions before
 0.9.x.
+
+The `/deposits/permit` pair is the gasless permit-deposit flow: `prepare` returns
+the EIP-712 payload the wallet signs and `permit` submits that signature. The
+processor automatically prioritizes ERC-3009, then ERC-2612, then Permit2 (with
+a pre-existing token allowance), and verifies the exact scheme-specific tuple
+before funds can move. Both routes require deposits write scope. The processor
+retains a global emergency kill switch; individual modal integrations still opt
+in to gasless deposits explicitly.
 
 `GET /chains` is the chain set and its capability flags. Missing it degrades
 quietly rather than breaking: the modal falls back to the table bundled in its
