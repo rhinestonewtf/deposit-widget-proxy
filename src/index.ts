@@ -113,11 +113,11 @@ const ROUTES = [
   ["get", "/liquidity"],
   ["get", "/prices"],
   ["post", "/quotes/preview"],
-  // Gasless permit deposits. `prepare` returns typed data + an allowance check;
-  // `permit` moves funds only with the owner's EIP-712 signature over the exact
-  // (account, token, amount, nonce, deadline) tuple. The processor requires
-  // deposits write scope for both and additionally gates enrollment per project
-  // (PERMIT_DEPOSITS_PROJECT_IDS).
+  // Gasless token-authorized deposits. `prepare` selects ERC-3009, ERC-2612,
+  // or Permit2 and returns the typed data; `permit` submits the signature plus
+  // the selected scheme's primitive replay/window fields. The processor
+  // reconstructs and verifies the payload, requires deposits write scope, and
+  // additionally gates enrollment per project (PERMIT_DEPOSITS_PROJECT_IDS).
   ["post", "/deposits/permit/prepare"],
   ["post", "/deposits/permit"],
   ["post", "/safe/withdraw"],

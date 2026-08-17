@@ -1,4 +1,4 @@
-/** Contract coverage for the two gasless Permit2 routes. */
+/** Contract coverage for the two gasless token-authorization routes. */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 
 const UPSTREAM_PORT = 4620
@@ -37,7 +37,16 @@ beforeAll(async () => {
         body: await req.text(),
       })
       if (url.pathname === '/deposits/permit/prepare') {
-        return Response.json({ kind: 'permit2', nonce: '7' })
+        return Response.json({
+          available: true,
+          authorization: {
+            kind: 'erc3009',
+            nonce: `0x${'12'.repeat(32)}`,
+            validAfter: '0',
+            validBefore: '1900000000',
+            typedData: {},
+          },
+        })
       }
       if (url.pathname === '/deposits/permit') {
         return Response.json(
@@ -88,7 +97,7 @@ describe('gasless permit routes', () => {
       token: '0x3333333333333333333333333333333333333333',
       amount: '1000000',
       owner: '0x1111111111111111111111111111111111111111',
-      kind: 'permit2',
+      kind: 'auto',
     }
 
     const prepared = await post('/deposits/permit/prepare', route)
@@ -96,8 +105,10 @@ describe('gasless permit routes', () => {
 
     const submitted = await post('/deposits/permit', {
       ...route,
-      nonce: '7',
-      deadline: '1900000000',
+      kind: 'erc3009',
+      nonce: `0x${'12'.repeat(32)}`,
+      validAfter: '0',
+      validBefore: '1900000000',
       signature: '0x1234',
     })
     expect(submitted.status).toBe(202)
@@ -115,8 +126,10 @@ describe('gasless permit routes', () => {
         apiKey: 'processor-key',
         body: JSON.stringify({
           ...route,
-          nonce: '7',
-          deadline: '1900000000',
+          kind: 'erc3009',
+          nonce: `0x${'12'.repeat(32)}`,
+          validAfter: '0',
+          validBefore: '1900000000',
           signature: '0x1234',
         }),
       },
