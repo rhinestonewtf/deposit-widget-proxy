@@ -78,9 +78,9 @@ The `/deposits/permit` pair is the gasless permit-deposit flow: `prepare` return
 the EIP-712 payload the wallet signs and `permit` submits that signature. The
 processor automatically prioritizes ERC-3009, then ERC-2612, then Permit2 (with
 a pre-existing token allowance), and verifies the exact scheme-specific tuple
-before funds can move. Both routes require deposits write scope. The feature is
-also gated per project on the processor, so deployments whose project isn't
-enrolled get a 4xx.
+before funds can move. Both routes require deposits write scope. The processor
+retains a global emergency kill switch; individual modal integrations still opt
+in to gasless deposits explicitly.
 
 `GET /chains` is the chain set and its capability flags. Missing it degrades
 quietly rather than breaking: the modal falls back to the table bundled in its

@@ -117,7 +117,7 @@ const ROUTES = [
   // or Permit2 and returns the typed data; `permit` submits the signature plus
   // the selected scheme's primitive replay/window fields. The processor
   // reconstructs and verifies the payload, requires deposits write scope, and
-  // additionally gates enrollment per project (PERMIT_DEPOSITS_PROJECT_IDS).
+  // retains a global emergency kill switch for the additive endpoints.
   ["post", "/deposits/permit/prepare"],
   ["post", "/deposits/permit"],
   ["post", "/safe/withdraw"],
