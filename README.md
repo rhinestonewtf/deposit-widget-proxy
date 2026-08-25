@@ -77,6 +77,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
 | `POST` | `/positions/:address/unwind` |
 | `POST` | `/deposits/recover` |
+| `POST` | `/analytics/ingest-token` |
 | `GET` | `/check/:address` |
 | `GET` | `/positions/:address` |
 | `GET` | `/portfolio/:address`, `/portfolio/solana/:address` |
@@ -107,6 +108,13 @@ in to gasless deposits explicitly.
 `GET /chains` is the chain set and its capability flags. Missing it degrades
 quietly rather than breaking: the modal falls back to the table bundled in its
 own version, so chains added since that release simply never appear.
+
+`POST /analytics/ingest-token` uses the server-held project key to mint a
+five-minute, analytics-ingest-only attribution token. The response is marked
+`Cache-Control: no-store`, and a browser-supplied `x-api-key` is ignored like it
+is on every route. Self-hosted or custom proxies must add this exact route before
+relying on attribution; older proxies return 404, but deposits and analytics
+event collection continue without attribution.
 
 A few deliberate omissions:
 
