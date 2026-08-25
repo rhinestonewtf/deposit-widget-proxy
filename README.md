@@ -41,6 +41,28 @@ Point the modal's `backendUrl` at it and check `GET /health`.
 | `TRUSTED_PROXY_HOPS` | no | — | See [regional payment methods](#regional-payment-methods) |
 | `TRUSTED_PROXY_CIDRS` | no | — | Required by either of the two above |
 
+## CORS and the embed origin
+
+This proxy sends `origin: "*"`, so it answers any caller and needs no change.
+That matters if you narrow it: a mobile integration's calls originate from the
+**hosted embed page**, not from your app's own domain, so an allow-list has to
+name it.
+
+```
+https://deposit.rhinestone.dev        # production
+https://dev.deposit.rhinestone.dev    # development integrations
+```
+
+Scheme and host only — a CORS origin takes no port and no path.
+
+Get it deployed **before** your first mobile build. The browser rejects the
+whole request at preflight, so a missing origin fails every call rather than
+one, and nothing in the failure names the cause.
+
+`allowHeaders` is explicit here and already lists what the modal sends,
+including `x-deposit-modal-version`. If you narrow that too, keep it — the
+modal sends it on every request, and dropping it fails preflight the same way.
+
 ## Routes
 
 Callers reach these without an API key — the proxy injects it. Everything goes to
