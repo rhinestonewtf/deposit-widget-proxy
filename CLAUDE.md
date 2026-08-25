@@ -104,6 +104,14 @@ secrets and runs on forks.
   How bad that is depends entirely on the route — `/register-managed` missing
   kills registration outright; `/onramp/swapped/payment-methods` missing
   degrades silently to generic payment methods. Decide which you're shipping.
+- **A new ORIGIN breaks a narrowed allow-list the same way a new header does.**
+  A mobile integration calls from the hosted embed page
+  (`https://deposit.rhinestone.dev`, `https://dev.deposit.rhinestone.dev`), not
+  from the client's own domain, so a client who replaced `origin: "*"` rejects
+  every call at preflight. This deployment is unaffected — `origin: "*"`
+  reflects everything — and no telemetry we hold can tell us which clients
+  narrowed theirs, so it is outreach, not a query. The README's CORS section is
+  the client-facing copy.
 - **`GET /tokens` is a legacy alias of `GET /qr/tokens`** for modals before
   0.9.x. It exists precisely because a client can point an old modal at a new
   proxy. Remove it only when no released modal calls `/tokens`.
