@@ -135,6 +135,9 @@ const ROUTES = [
   // off the browser-facing proxy. The processor never returns the signing
   // secret here (only `hasWebhookSecret`), so this is safe to expose.
   ["get", "/setup"],
+  // Mints a short-lived, analytics-ingest-only attribution token. The project
+  // comes from the server-held API key, never browser input.
+  ["post", "/analytics/ingest-token"],
   // DeFi position migration. The holder's EOA owns the aTokens, so `unwind`
   // returns UNSIGNED calldata that only that EOA can execute — the proxy is not
   // handing out an executable action, and every guard that matters (recipient
@@ -219,9 +222,13 @@ for (const [method, path, upstreamPath] of ROUTES) {
         body: method === "post" ? await c.req.text() : undefined,
       },
     );
+    const responseHeaders: Record<string, string> = { ...JSON_HEADERS };
+    if (path === "/analytics/ingest-token" && upstream.ok) {
+      responseHeaders["Cache-Control"] = "no-store";
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
-      headers: JSON_HEADERS,
+      headers: responseHeaders,
     });
   });
 }
