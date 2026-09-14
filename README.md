@@ -232,7 +232,7 @@ server calls it directly with project credentials and returns the 15-minute
 minting through a public proxy. The processor verifies expiry and canonical
 project/customer/account scope; the proxy does not decode or trust JWT claims.
 `GET /compliance/access` and `POST /compliance/{verification|support|recovery}/sessions`
-use the same bearer-only group. The processor gates actions by project and
+use the same bearer-only group. The processor checks bearer ownership and
 authoritative customer capabilities; recovery also requires proven financial
 isolation. These return 503 until the provider adapter is connected. Existing
 Swapped routes are unchanged. New conversion routes also remain 503 until their
