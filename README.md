@@ -231,11 +231,10 @@ server calls it directly with project credentials and returns the 15-minute
 `token` and `expiresAt` only to the authenticated customer. Never expose token
 minting through a public proxy. The processor verifies expiry and canonical
 project/customer/account scope; the proxy does not decode or trust JWT claims.
-`GET /compliance/access` and `POST /compliance/{verification|support|recovery}/sessions`
-use the same bearer-only group. The processor checks bearer ownership and
-authoritative customer capabilities; recovery also requires proven financial
-isolation. These return 503 until the provider adapter is connected. Existing
-Swapped routes are unchanged. New conversion routes also remain 503 until their
-journey implementations land. The initial contract supports EUR/USD bank
+The browser uses the existing `GET /compliance/status` and the twelve conversion
+routes directly. Verification belongs to each hosted journey's `nextAction`, not
+a preliminary capability request. Support/recovery routes are not exposed by
+this foundation. Existing Swapped routes are unchanged. Conversion routes remain
+503 until their journey implementations land. The initial contract supports EUR/USD bank
 transfers only, not cards. Hosted setup/beneficiary sessions do not execute money
 movement, and iframe completion must never be treated as settlement.

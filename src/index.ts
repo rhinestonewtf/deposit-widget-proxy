@@ -185,10 +185,6 @@ app.get("/health", (c) => c.json({ ok: true }));
 // Customer routes never borrow the application's credentials.
 const CUSTOMER_ROUTES = [
   ["get", "/compliance/status"],
-  ["get", "/compliance/access"],
-  ["post", "/compliance/verification/sessions"],
-  ["post", "/compliance/support/sessions"],
-  ["post", "/compliance/recovery/sessions"],
   ["post", "/onramp/sessions"],
   ["get", "/onramp/sessions/:id"],
   ["get", "/onramp/options"],

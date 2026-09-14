@@ -54,13 +54,7 @@ afterAll(() => {
 });
 
 describe("customer route boundary", () => {
-  it.each([
-    "/onramp/sessions",
-    "/offramp/sessions",
-    "/compliance/verification/sessions",
-    "/compliance/support/sessions",
-    "/compliance/recovery/sessions",
-  ])(
+  it.each(["/onramp/sessions", "/offramp/sessions"])(
     "preserves POST body without application credentials on %s",
     async (path) => {
       const body = JSON.stringify({ currency: "EUR" });
@@ -82,10 +76,9 @@ describe("customer route boundary", () => {
     },
   );
   it("preserves processor rejection and prevents caching errors", async () => {
-    const response = await fetch(
-      `${base}/compliance/access?currency=EUR&status=403`,
-      { headers: { authorization: "Bearer browser-token" } },
-    );
+    const response = await fetch(`${base}/onramp/payments?status=403`, {
+      headers: { authorization: "Bearer browser-token" },
+    });
     expect(response.status).toBe(403);
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
@@ -129,6 +122,9 @@ describe("customer route boundary", () => {
   it.each([
     "/compliance/sessions",
     "/compliance/verification",
+    "/compliance/verification/sessions",
+    "/compliance/support/sessions",
+    "/compliance/recovery/sessions",
     "/onramp/recovery",
     "/admin/flags",
   ])("does not expose %s", async (path) => {
@@ -141,6 +137,14 @@ describe("customer route boundary", () => {
         })
       ).status,
     ).toBe(404);
+    expect(calls.length).toBe(count);
+  });
+  it("does not expose a preliminary capability endpoint", async () => {
+    const count = calls.length;
+    const response = await fetch(`${base}/compliance/access?currency=EUR`, {
+      headers: { authorization: "Bearer browser-token" },
+    });
+    expect(response.status).toBe(404);
     expect(calls.length).toBe(count);
   });
   it("allows browser Authorization preflight", async () => {
