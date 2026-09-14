@@ -173,6 +173,7 @@ app.use(
     allowMethods: ["GET", "POST", "OPTIONS"],
     allowHeaders: [
       "Content-Type",
+      "Authorization",
       "x-api-key",
       MODAL_VERSION_HEADER,
     ],
@@ -180,6 +181,53 @@ app.use(
 );
 
 app.get("/health", (c) => c.json({ ok: true }));
+
+// Customer routes never borrow the application's credentials.
+const CUSTOMER_ROUTES = [
+  ["get", "/compliance/status"],
+  ["post", "/onramp/sessions"],
+  ["get", "/onramp/sessions/:id"],
+  ["get", "/onramp/options"],
+  ["get", "/onramp/payments"],
+  ["get", "/onramp/payments/:id"],
+  ["get", "/onramp/accounts"],
+  ["get", "/onramp/accounts/:id"],
+  ["post", "/offramp/sessions"],
+  ["get", "/offramp/sessions/:id"],
+  ["get", "/offramp/options"],
+  ["get", "/offramp/payments"],
+  ["get", "/offramp/payments/:id"],
+] as const;
+
+for (const [method, path] of CUSTOMER_ROUTES) {
+  app[method](path, async (c) => {
+    c.header("Cache-Control", "no-store");
+    const authorization = c.req.header("authorization");
+    if (!authorization || !/^Bearer [^\s]+$/i.test(authorization)) {
+      return c.json({ error: "Missing or malformed bearer token" }, 401);
+    }
+    const headers: Record<string, string> = { ...JSON_HEADERS, authorization };
+    for (const name of ["origin", "referer", MODAL_VERSION_HEADER]) {
+      const value = c.req.header(name);
+      if (value) headers[name] = value;
+    }
+    const { pathname, search } = new URL(c.req.url);
+    try {
+      const upstream = await fetch(`${BACKEND_URL}${pathname}${search}`, {
+        method: method.toUpperCase(),
+        headers,
+        body: method === "post" ? await c.req.text() : undefined,
+        redirect: "manual",
+      });
+      return new Response(await upstream.text(), {
+        status: upstream.status,
+        headers: { ...JSON_HEADERS, "Cache-Control": "no-store" },
+      });
+    } catch {
+      return c.json({ error: "Customer service unavailable" }, 502);
+    }
+  });
+}
 
 for (const [method, path, upstreamPath] of ROUTES) {
   app[method](path, async (c) => {

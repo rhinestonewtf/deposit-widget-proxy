@@ -215,3 +215,26 @@ exactly which headers and query strings reach the upstream.
 ## License
 
 MIT — see [LICENSE](./LICENSE).
+# Customer-scoped conversion routes
+
+Deploy this proxy before upgrading a modal that uses browser bearer sessions.
+Custom proxies must allow `Authorization` in CORS and explicitly forward only
+the customer routes in `CUSTOMER_ROUTES` in `src/index.ts`. Build fresh upstream
+headers: `Authorization`, `Content-Type`, `Origin`, `Referer`, and
+`x-deposit-modal-version`. **Never inject or forward `x-api-key` on these routes.**
+Preserve request bodies, query strings, upstream status and JSON responses. Set
+`Cache-Control: no-store` on every customer response, including failures. Do not
+follow upstream redirects with bearer credentials or log request/response bodies.
+
+`POST /compliance/sessions` is deliberately absent. Your authenticated integrator
+server calls it directly with project credentials and returns the 15-minute
+`token` and `expiresAt` only to the authenticated customer. Never expose token
+minting through a public proxy. The processor verifies expiry and canonical
+project/customer/account scope; the proxy does not decode or trust JWT claims.
+The browser uses the existing `GET /compliance/status` and the twelve conversion
+routes directly. Verification belongs to each hosted journey's `nextAction`, not
+a preliminary capability request. Support/recovery routes are not exposed by
+this foundation. Existing Swapped routes are unchanged. Conversion routes remain
+503 until their journey implementations land. The initial contract supports EUR/USD bank
+transfers only, not cards. Hosted setup/beneficiary sessions do not execute money
+movement, and iframe completion must never be treated as settlement.
