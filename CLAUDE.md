@@ -1,8 +1,8 @@
 # deposit-widget-proxy — Claude Instructions
 
-A ~200-line Bun + Hono process that holds a Rhinestone API key and forwards
-deposit-modal requests to `deposit-service-processor`. One upstream, an explicit
-route table, and a freshly built header set.
+A single-file Bun + Hono process that holds a Rhinestone API key and forwards
+deposit-modal requests to `deposit-service-processor`. One upstream, explicit
+route tables, and a freshly built header set.
 
 **This repo is public and MIT-licensed, and clients self-host it.** Every change
 is a change to someone else's deployment. Read
@@ -20,7 +20,7 @@ than an endpoint we host — means the key stays theirs and never transits our
 infrastructure.
 
 If a given deployment is down, that integrator's deposit flow is down entirely:
-the modal's 16 backend calls all go through it and it has no fallback.
+every modal backend call goes through it and it has no fallback.
 
 ## Where it sits in the intent lifecycle
 
@@ -87,7 +87,7 @@ secrets and runs on forks.
 
 | path | what |
 |---|---|
-| `src/index.ts` | Everything: the `ROUTES` table, CORS, header construction, forwarding |
+| `src/index.ts` | Everything: the `ROUTES` and `CUSTOMER_ROUTES` tables, CORS, header construction, forwarding |
 | `src/geoip.ts` | Trusted-proxy checks and edge-signal resolution |
 | `test/*.test.ts` | Subprocess-against-stub suites, one per surface |
 
@@ -119,8 +119,12 @@ secrets and runs on forks.
 ## Gotchas
 
 - **The route table is a security boundary, not boilerplate.** The proxy
-  attaches the API key to whatever reaches it, so `app.all("/*")` would hand the
-  browser every write on the upstream. Add routes one at a time, deliberately.
+  attaches the API key to whatever reaches a `ROUTES` entry, so `app.all("/*")`
+  would hand the browser every write on the upstream. Add routes one at a time,
+  deliberately.
+- **`CUSTOMER_ROUTES` never attach the API key.** They relay the browser's
+  `Authorization` bearer instead (401 without one), so a route authorized by the
+  end user belongs there, and one needing the project's key in `ROUTES`.
 - **`POST /setup` is deliberately not proxied** (it rotates the webhook secret
   and sponsorship config — an admin write). `GET /setup` is, because the
   processor returns only `hasWebhookSecret`, never the secret.
@@ -129,18 +133,20 @@ secrets and runs on forks.
   its authorization is the recipient's *signature* over the deposit id and
   destination, so the API key grants a caller nothing.
 - **Headers are built fresh, never copied.** Only `origin`, `referer` and
-  `x-deposit-modal-version` are relayed. This is why a browser cannot inject
-  `x-api-key`, `x-user-country` or `x-client-ip` — and why adding any new
-  client→processor signal means editing **both** proxies plus the docs recipe
-  for custom proxies.
+  `x-deposit-modal-version` are relayed (plus `authorization` on
+  `CUSTOMER_ROUTES`). This is why a browser cannot inject `x-api-key`,
+  `x-user-country` or `x-client-ip` — and why adding any new client→processor
+  signal means editing this proxy **and** the
+  [custom-proxy recipe](https://docs.rhinestone.dev/deposits/widget/backend).
 - **The localization env vars fail closed, at startup.** `TRUSTED_PROXY_HOPS > 0`
   or `TRUSTED_COUNTRY_HEADER` without `TRUSTED_PROXY_CIDRS` **throws and the
   process exits** — without an allowlist any client could forge the header. Hops
   are counted from the **right**, which is what makes a browser-prepended
   `x-forwarded-for` inert; a malformed chain resolves to nothing rather than
   being repaired.
-- **Our dev instance sets `TRUSTED_PROXY_HOPS=1`** with the three private EKS
-  subnet CIDRs, because Traefik is the single hop in front of the pod. **Pred's
+- **Our `deposit-proxy` sets `TRUSTED_PROXY_HOPS=1` on dev and prod** with the
+  three private EKS subnet CIDRs, because Traefik is the single hop in front of
+  the pod. **Pred's
   instance sets neither**, so they get no localization at all — deliberate, and
   the reason a country appears on our traffic but not theirs.
 - **The `server` handle is threaded through Hono's env on purpose.**
