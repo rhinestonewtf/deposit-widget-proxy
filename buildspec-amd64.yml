@@ -9,13 +9,10 @@ phases:
       - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
   build:
     commands:
-      # Retries: oven/bun has no ECR public mirror (RHI-5627), so CodeBuild's
-      # shared NAT egress IPs are exposed to Docker Hub's anonymous pull rate
-      # limit — confirmed tripping for real on deposit-service-processor,
-      # 2026-08-13, same base image.
+      # Retries: a first pull of an uncached tag still reaches Docker Hub through the pull-through cache.
       - |
         for i in 1 2 3; do
-          docker build -t "$ECR_REGISTRY/$APP_NAME:$IMAGE_TAG-amd64" . && break
+          docker build --build-arg DOCKER_HUB="$ECR_REGISTRY/docker-hub" -t "$ECR_REGISTRY/$APP_NAME:$IMAGE_TAG-amd64" . && break
           [ "$i" -eq 3 ] && { echo "docker build failed after 3 attempts" >&2; exit 1; }
           echo "docker build failed (attempt $i/3), retrying in 10s..." >&2
           sleep 10

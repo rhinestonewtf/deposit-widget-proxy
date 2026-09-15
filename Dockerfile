@@ -1,4 +1,6 @@
-FROM oven/bun:1 AS build
+# CodeBuild points this at the ECR pull-through cache; the default keeps local builds on Docker Hub.
+ARG DOCKER_HUB=docker.io
+FROM ${DOCKER_HUB}/oven/bun:1 AS build
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
