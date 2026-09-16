@@ -54,7 +54,13 @@ afterAll(() => {
 });
 
 describe("customer route boundary", () => {
-  it.each(["/onramp/sessions", "/offramp/sessions"])(
+  it.each([
+    "/onramp/noah/setup",
+    "/offramp/noah/sessions",
+    // Minting a hosted address to read bank details is a POST, and needs its
+    // own entry: the GET on /accounts/:id does not cover it.
+    "/onramp/noah/accounts/0192ab00-0000-7000-8000-0000000000ff/details",
+  ])(
     "preserves POST body without application credentials on %s",
     async (path) => {
       const body = JSON.stringify({ currency: "EUR" });
@@ -76,7 +82,7 @@ describe("customer route boundary", () => {
     },
   );
   it("preserves processor rejection and prevents caching errors", async () => {
-    const response = await fetch(`${base}/onramp/payments?status=403`, {
+    const response = await fetch(`${base}/onramp/noah/payments?status=403`, {
       headers: { authorization: "Bearer browser-token" },
     });
     expect(response.status).toBe(403);
@@ -84,16 +90,16 @@ describe("customer route boundary", () => {
   });
   it.each([
     "/compliance/status",
-    "/onramp/options",
-    "/onramp/payments",
-    "/onramp/payments/id",
-    "/onramp/accounts",
-    "/onramp/accounts/id",
-    "/onramp/sessions/id",
-    "/offramp/options",
-    "/offramp/payments",
-    "/offramp/payments/id",
-    "/offramp/sessions/id",
+    "/onramp/noah/options",
+    "/onramp/noah/payments",
+    "/onramp/noah/payments/id",
+    "/onramp/noah/accounts",
+    "/onramp/noah/accounts/id",
+    "/onramp/noah/setup/id",
+    "/offramp/noah/options",
+    "/offramp/noah/payments",
+    "/offramp/noah/payments/id",
+    "/offramp/noah/sessions/id",
   ])("forwards only browser credentials on %s", async (path) => {
     const response = await fetch(`${base}${path}?limit=10`, {
       headers: {
@@ -114,7 +120,7 @@ describe("customer route boundary", () => {
   });
   it("rejects missing bearer without reaching upstream", async () => {
     const count = calls.length;
-    const response = await fetch(`${base}/onramp/payments`);
+    const response = await fetch(`${base}/onramp/noah/payments`);
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(calls.length).toBe(count);
@@ -126,6 +132,9 @@ describe("customer route boundary", () => {
     "/compliance/support/sessions",
     "/compliance/recovery/sessions",
     "/onramp/recovery",
+    // The unqualified prefix is nobody's surface now (RHI-7284).
+    "/onramp/sessions",
+    "/onramp/accounts",
     "/admin/flags",
   ])("does not expose %s", async (path) => {
     const count = calls.length;
@@ -148,7 +157,7 @@ describe("customer route boundary", () => {
     expect(calls.length).toBe(count);
   });
   it("allows browser Authorization preflight", async () => {
-    const response = await fetch(`${base}/onramp/sessions`, {
+    const response = await fetch(`${base}/onramp/noah/setup`, {
       method: "OPTIONS",
       headers: {
         origin: "https://app.test",
