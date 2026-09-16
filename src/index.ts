@@ -183,20 +183,26 @@ app.use(
 app.get("/health", (c) => c.json({ ok: true }));
 
 // Customer routes never borrow the application's credentials.
+// Provider-scoped, matching the processor (RHI-7284): Noah answers
+// /onramp/noah/* and /offramp/noah/* on this customer bearer, while Swapped
+// keeps its own api-key routes above. Every path needs its own entry — there
+// is no catch-all, so an unlisted route 404s here before it ever reaches the
+// processor.
 const CUSTOMER_ROUTES = [
   ["get", "/compliance/status"],
-  ["post", "/onramp/sessions"],
-  ["get", "/onramp/sessions/:id"],
-  ["get", "/onramp/options"],
-  ["get", "/onramp/payments"],
-  ["get", "/onramp/payments/:id"],
-  ["get", "/onramp/accounts"],
-  ["get", "/onramp/accounts/:id"],
-  ["post", "/offramp/sessions"],
-  ["get", "/offramp/sessions/:id"],
-  ["get", "/offramp/options"],
-  ["get", "/offramp/payments"],
-  ["get", "/offramp/payments/:id"],
+  ["post", "/onramp/noah/setup"],
+  ["get", "/onramp/noah/setup/:id"],
+  ["get", "/onramp/noah/options"],
+  ["get", "/onramp/noah/payments"],
+  ["get", "/onramp/noah/payments/:id"],
+  ["get", "/onramp/noah/accounts"],
+  ["post", "/onramp/noah/accounts/:id/details"],
+  ["get", "/onramp/noah/accounts/:id"],
+  ["post", "/offramp/noah/sessions"],
+  ["get", "/offramp/noah/sessions/:id"],
+  ["get", "/offramp/noah/options"],
+  ["get", "/offramp/noah/payments"],
+  ["get", "/offramp/noah/payments/:id"],
 ] as const;
 
 for (const [method, path] of CUSTOMER_ROUTES) {
