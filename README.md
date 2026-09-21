@@ -231,12 +231,16 @@ server calls it directly with project credentials and returns the 15-minute
 `token` and `expiresAt` only to the authenticated customer. Never expose token
 minting through a public proxy. The processor verifies expiry and canonical
 project/customer/account scope; the proxy does not decode or trust JWT claims.
-The browser uses the existing `GET /compliance/status` and the thirteen
-conversion routes directly. Those are provider-scoped — Noah answers
+The browser uses `GET /compliance/status`, `POST /compliance/verification` and
+the thirteen conversion routes directly. Those are provider-scoped — Noah answers
 `/onramp/noah/*` and `/offramp/noah/*`, while Swapped keeps its own api-key
 routes — so a path without an entry in `CUSTOMER_ROUTES` 404s here rather than
-reaching the processor. Verification belongs to each hosted journey's
-`nextAction`, not a preliminary capability request. Bank details are read
+reaching the processor. `POST /compliance/verification` starts or resumes hosted
+verification for the customer the bearer names, and returns a `nextAction` to
+present; it is a customer-bearer route, unlike `POST /compliance/sessions`, which
+mints the bearer itself from project credentials and is therefore never proxied.
+Verification is still not a preliminary capability request — completion is read
+from `GET /compliance/status`, never from the hosted frame. Bank details are read
 through `POST /onramp/noah/accounts/:id/details`, which mints a hosted address
 on demand rather than returning coordinates through this proxy. Support/recovery routes are not exposed by
 this foundation. Existing Swapped routes are unchanged. Conversion routes remain
