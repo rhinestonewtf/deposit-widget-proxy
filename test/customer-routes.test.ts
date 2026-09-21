@@ -60,6 +60,10 @@ describe("customer route boundary", () => {
     // Minting a hosted address to read bank details is a POST, and needs its
     // own entry: the GET on /accounts/:id does not cover it.
     "/onramp/noah/accounts/0192ab00-0000-7000-8000-0000000000ff/details",
+    // Starting hosted verification is likewise a POST and likewise distinct
+    // from the GET on /compliance/status: status reads the outcome, this one
+    // creates the session that produces it.
+    "/compliance/verification",
   ])(
     "preserves POST body without application credentials on %s",
     async (path) => {
@@ -126,8 +130,11 @@ describe("customer route boundary", () => {
     expect(calls.length).toBe(count);
   });
   it.each([
+    // Stays denied for a different reason than the rest: it is authenticated by
+    // the PROJECT API KEY, not a customer bearer, so forwarding it would let any
+    // browser mint a session for any smart account using our injected key.
+    // `/compliance/verification` sits on the customer bearer and is allowed.
     "/compliance/sessions",
-    "/compliance/verification",
     "/compliance/verification/sessions",
     "/compliance/support/sessions",
     "/compliance/recovery/sessions",

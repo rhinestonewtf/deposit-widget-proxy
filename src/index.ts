@@ -190,6 +190,11 @@ app.get("/health", (c) => c.json({ ok: true }));
 // processor.
 const CUSTOMER_ROUTES = [
   ["get", "/compliance/status"],
+  // Starts or resumes hosted verification for the customer named by the bearer.
+  // A POST because minting a hosted session is a provider write. Without it the
+  // modal can serve an already-approved customer but can never onboard a new
+  // one — the call 404s here before reaching the processor.
+  ["post", "/compliance/verification"],
   ["post", "/onramp/noah/setup"],
   ["get", "/onramp/noah/setup/:id"],
   ["get", "/onramp/noah/options"],
