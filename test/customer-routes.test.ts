@@ -99,6 +99,7 @@ describe("customer route boundary", () => {
     "/onramp/noah/payments/id",
     "/onramp/noah/accounts",
     "/onramp/noah/accounts/id",
+    "/onramp/noah/accounts/id/details",
     "/onramp/noah/setup/id",
     "/offramp/noah/options",
     "/offramp/noah/payments",

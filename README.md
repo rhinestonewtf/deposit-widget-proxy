@@ -232,7 +232,7 @@ server calls it directly with project credentials and returns the 15-minute
 minting through a public proxy. The processor verifies expiry and canonical
 project/customer/account scope; the proxy does not decode or trust JWT claims.
 The browser uses `GET /compliance/status`, `POST /compliance/verification` and
-the thirteen conversion routes directly. Those are provider-scoped — Noah answers
+the conversion routes directly. Those are provider-scoped — Noah answers
 `/onramp/noah/*` and `/offramp/noah/*`, while Swapped keeps its own api-key
 routes — so a path without an entry in `CUSTOMER_ROUTES` 404s here rather than
 reaching the processor. `POST /compliance/verification` starts or resumes hosted
@@ -240,9 +240,15 @@ verification for the customer the bearer names, and returns a `nextAction` to
 present; it is a customer-bearer route, unlike `POST /compliance/sessions`, which
 mints the bearer itself from project credentials and is therefore never proxied.
 Verification is still not a preliminary capability request — completion is read
-from `GET /compliance/status`, never from the hosted frame. Bank details are read
-through `POST /onramp/noah/accounts/:id/details`, which mints a hosted address
-on demand rather than returning coordinates through this proxy. Support/recovery routes are not exposed by
+from `GET /compliance/status`, never from the hosted frame.
+
+`GET /onramp/noah/accounts/:id/details` returns a stored bank-details snapshot
+on the customer bearer, with `Cache-Control: no-store`. A valid legacy account
+without a snapshot returns `{ "bankDetails": null }`. Do not log or cache this
+response. Deploy proxy support before enabling the modal's native details option.
+`POST` on the same path retains the hosted-details fallback.
+
+Support/recovery routes are not exposed by
 this foundation. Existing Swapped routes are unchanged. Conversion routes remain
 503 until their journey implementations land. The initial contract supports EUR/USD bank
 transfers only, not cards. Hosted setup/beneficiary sessions do not execute money
