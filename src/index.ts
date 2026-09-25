@@ -201,7 +201,7 @@ const CUSTOMER_ROUTES = [
   ["get", "/onramp/noah/payments"],
   ["get", "/onramp/noah/payments/:id"],
   ["get", "/onramp/noah/accounts"],
-  ["post", "/onramp/noah/accounts/:id/details"],
+  ["get", "/onramp/noah/accounts/:id/details"],
   ["get", "/onramp/noah/accounts/:id"],
   ["post", "/offramp/noah/sessions"],
   ["get", "/offramp/noah/sessions/:id"],

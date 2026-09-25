@@ -57,9 +57,6 @@ describe("customer route boundary", () => {
   it.each([
     "/onramp/noah/setup",
     "/offramp/noah/sessions",
-    // Minting a hosted address to read bank details is a POST, and needs its
-    // own entry: the GET on /accounts/:id does not cover it.
-    "/onramp/noah/accounts/0192ab00-0000-7000-8000-0000000000ff/details",
     // Starting hosted verification is likewise a POST and likewise distinct
     // from the GET on /compliance/status: status reads the outcome, this one
     // creates the session that produces it.
@@ -99,6 +96,7 @@ describe("customer route boundary", () => {
     "/onramp/noah/payments/id",
     "/onramp/noah/accounts",
     "/onramp/noah/accounts/id",
+    "/onramp/noah/accounts/id/details",
     "/onramp/noah/setup/id",
     "/offramp/noah/options",
     "/offramp/noah/payments",
