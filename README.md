@@ -242,11 +242,11 @@ mints the bearer itself from project credentials and is therefore never proxied.
 Verification is still not a preliminary capability request — completion is read
 from `GET /compliance/status`, never from the hosted frame.
 
-`GET /onramp/noah/accounts/:id/details` returns a stored bank-details snapshot
-on the customer bearer, with `Cache-Control: no-store`. A valid legacy account
-without a snapshot returns `{ "bankDetails": null }`. Do not log or cache this
-response. Deploy proxy support before enabling the modal's native details option.
-`POST` on the same path retains the hosted-details fallback.
+`GET /onramp/noah/accounts/:id/details` returns the account's bank instructions
+on the customer bearer, with `Cache-Control: no-store`; the modal renders them
+itself. Do not log or cache this response. Deploy proxy support before the modal
+that reads it. There is no `POST` on this path: Noah's hosted display page is not
+used.
 
 Support/recovery routes are not exposed by
 this foundation. Existing Swapped routes are unchanged. Conversion routes remain
