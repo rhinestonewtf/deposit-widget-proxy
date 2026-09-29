@@ -63,6 +63,10 @@ one, and nothing in the failure names the cause.
 including `x-deposit-modal-version`. If you narrow that too, keep it — the
 modal sends it on every request, and dropping it fails preflight the same way.
 
+`allowMethods` includes `QUERY`, which `/assets` batches use; Hono's bare
+`cors()` omits it, so keep it if you customize CORS. Run on a current Bun (or the
+published image): older runtimes' `fetch` silently sends `QUERY` as `GET`.
+
 ## Routes
 
 Callers reach these without an API key — the proxy injects it. Everything goes to
@@ -83,6 +87,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/portfolio/:address`, `/portfolio/solana/:address` |
 | `GET` | `/deposits` |
 | `GET` | `/liquidity`, `/prices` |
+| `GET`, `QUERY` | `/assets` — token metadata, prices and logos for the modal; `QUERY` takes a JSON body for batches |
 | `GET` | `/setup` |
 | `GET` | `/chains` |
 | `GET` | `/qr/tokens` |
