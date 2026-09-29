@@ -112,6 +112,11 @@ const ROUTES = [
   ["post", "/deposits/recover"],
   ["get", "/liquidity"],
   ["get", "/prices"],
+  // Token metadata, prices and logos for the modal. GET serves small lookups;
+  // QUERY carries a JSON body for batches (up to 100 ids), since long GET URLs
+  // get rejected by intermediaries.
+  ["get", "/assets"],
+  ["query", "/assets"],
   ["post", "/quotes/preview"],
   // Gasless token-authorized deposits. `prepare` selects ERC-3009, ERC-2612,
   // or Permit2 and returns the typed data; `permit` submits the signature plus
@@ -170,7 +175,9 @@ app.use(
   "*",
   cors({
     origin: "*",
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    // QUERY isn't CORS-safelisted, so the browser preflights it; without it
+    // here every /assets batch fails at preflight.
+    allowMethods: ["GET", "POST", "QUERY", "OPTIONS"],
     allowHeaders: [
       "Content-Type",
       "Authorization",
@@ -241,7 +248,8 @@ for (const [method, path] of CUSTOMER_ROUTES) {
 }
 
 for (const [method, path, upstreamPath] of ROUTES) {
-  app[method](path, async (c) => {
+  // `app.on` rather than `app[method]`: Hono has no `app.query`.
+  app.on(method.toUpperCase(), path, async (c) => {
     const { pathname, search } = new URL(c.req.url);
     // Forward the browser's Origin/Referer to the processor so it can derive
     // the Swapped submerchant (per-dapp attribution) from the embedding page's
@@ -278,7 +286,7 @@ for (const [method, path, upstreamPath] of ROUTES) {
       {
         method: method.toUpperCase(),
         headers,
-        body: method === "post" ? await c.req.text() : undefined,
+        body: method === "get" ? undefined : await c.req.text(),
       },
     );
     const responseHeaders: Record<string, string> = { ...JSON_HEADERS };

@@ -100,6 +100,10 @@ secrets and runs on forks.
   proxies before releasing a modal that sends a new header. (A bare Hono
   `cors()` is safe: it reflects `Access-Control-Request-Headers` when
   `allowHeaders` is empty.)
+- **Adding an HTTP method the modal sends breaks preflight the same way a new
+  header does.** `QUERY /assets` fails at preflight on any proxy whose
+  `allowMethods` omits it — including a bare Hono `cors()`, whose default list
+  has no `QUERY`. Deploy proxies before a modal that sends it.
 - **Adding a route the modal calls means older self-hosted proxies 404 it.**
   How bad that is depends entirely on the route — `/register-managed` missing
   kills registration outright; `/onramp/swapped/payment-methods` missing
@@ -122,6 +126,9 @@ secrets and runs on forks.
   attaches the API key to whatever reaches a `ROUTES` entry, so `app.all("/*")`
   would hand the browser every write on the upstream. Add routes one at a time,
   deliberately.
+- **Bun's `fetch` silently downgrades methods it doesn't recognise to `GET`.**
+  Any route beyond GET/POST needs a wire-level test that the upstream sees the
+  real method (see `test/assets-proxy.test.ts`).
 - **`CUSTOMER_ROUTES` never attach the API key.** They relay the browser's
   `Authorization` bearer instead (401 without one), so a route authorized by the
   end user belongs there, and one needing the project's key in `ROUTES`.
