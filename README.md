@@ -63,11 +63,9 @@ one, and nothing in the failure names the cause.
 including `x-deposit-modal-version`. If you narrow that too, keep it — the
 modal sends it on every request, and dropping it fails preflight the same way.
 
-`allowMethods` includes `QUERY`, which `/assets` batches use. It isn't a
-CORS-safelisted method, so the browser preflights it, and Hono's bare `cors()`
-default method list omits it. If you customize CORS, keep `QUERY`. Run on a
-current Bun (or the published image): older runtimes' `fetch` silently sends an
-unrecognised method as `GET`.
+`allowMethods` includes `QUERY`, which `/assets` batches use; Hono's bare
+`cors()` omits it, so keep it if you customize CORS. Run on a current Bun (or the
+published image): older runtimes' `fetch` silently sends `QUERY` as `GET`.
 
 ## Routes
 

@@ -98,8 +98,7 @@ describe("/assets", () => {
     });
     expect(response.status).toBe(200);
     const call = calls.at(-1)!;
-    // Bun's fetch downgrades methods it doesn't recognise to GET, so this is
-    // the assertion that guards the whole route.
+    // Bun's fetch downgrades methods it doesn't recognise to GET.
     expect(call.method).toBe("QUERY");
     expect(call.pathname).toBe("/assets");
     expect(call.body).toBe(body);

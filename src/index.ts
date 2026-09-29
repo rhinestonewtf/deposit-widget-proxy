@@ -112,9 +112,8 @@ const ROUTES = [
   ["post", "/deposits/recover"],
   ["get", "/liquidity"],
   ["get", "/prices"],
-  // Token metadata, prices and logos for the modal. GET serves small lookups;
-  // QUERY carries a JSON body for batches (up to 100 ids), since long GET URLs
-  // get rejected by intermediaries.
+  // QUERY carries a JSON body for batches, since long GET URLs get rejected
+  // by intermediaries.
   ["get", "/assets"],
   ["query", "/assets"],
   ["post", "/quotes/preview"],
