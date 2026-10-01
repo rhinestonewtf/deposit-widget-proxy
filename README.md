@@ -239,9 +239,8 @@ project/customer/account scope; the proxy does not decode or trust JWT claims.
 The browser uses `GET /compliance/status`, `POST /compliance/verification` and
 the conversion routes directly: `GET /onramp/options`, `POST`/`GET
 /onramp/accounts`, `GET /onramp/accounts/:id[/details]` and `GET
-/onramp/orders[/:id]`, which the processor scopes to the bearer's customer. The
-legacy `/onramp/noah/*` and `/offramp/noah/*` entries stay until the modal is
-off them. A path without an entry in `CUSTOMER_ROUTES` 404s here rather than
+/onramp/orders[/:id]`, which the processor scopes to the bearer's customer. A
+path without an entry in `CUSTOMER_ROUTES` 404s here rather than
 reaching the processor. `POST /onramp/orders` is a project-key mint and is not
 on this list; never forward an order read with `x-api-key`, which would list
 every order of the project. `POST /compliance/verification` starts or resumes hosted
@@ -251,8 +250,7 @@ mints the bearer itself from project credentials and is therefore never proxied.
 Verification is still not a preliminary capability request — completion is read
 from `GET /compliance/status`, never from the hosted frame.
 
-`GET /onramp/accounts/:id/details` (and legacy `GET
-/onramp/noah/accounts/:id/details`) returns the customer's bank transfer
+`GET /onramp/accounts/:id/details` returns the customer's bank transfer
 instructions. Forward it with `Cache-Control: no-store` and never log or cache
 its body. Deploy proxy support before the modal that reads it.
 
