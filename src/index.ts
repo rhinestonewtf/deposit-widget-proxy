@@ -188,12 +188,14 @@ app.use(
 
 app.get("/health", (c) => c.json({ ok: true }));
 
-// Customer routes never borrow the application's credentials.
-// Provider-scoped, matching the processor (RHI-7284): Noah answers
-// /onramp/noah/* and /offramp/noah/* on this customer bearer, while Swapped
-// keeps its own api-key routes above. Every path needs its own entry — there
-// is no catch-all, so an unlisted route 404s here before it ever reaches the
-// processor.
+// Customer routes never borrow the application's credentials. The unified
+// /onramp/{options,accounts,orders} routes take this bearer and scope it to its
+// customer; `POST /onramp/orders` (a project-key mint) is deliberately absent,
+// and so is any key-forwarded order read, which would list the project's
+// orders to any browser. The /onramp/noah/* and /offramp/noah/* entries go
+// once the modal is off them (RHI-7972). Every path needs its own entry —
+// there is no catch-all, so an unlisted route 404s here before it ever reaches
+// the processor.
 const CUSTOMER_ROUTES = [
   ["get", "/compliance/status"],
   // Starts or resumes hosted verification for the customer named by the bearer.
@@ -201,6 +203,13 @@ const CUSTOMER_ROUTES = [
   // modal can serve an already-approved customer but can never onboard a new
   // one — the call 404s here before reaching the processor.
   ["post", "/compliance/verification"],
+  ["get", "/onramp/options"],
+  ["post", "/onramp/accounts"],
+  ["get", "/onramp/accounts"],
+  ["get", "/onramp/accounts/:id/details"],
+  ["get", "/onramp/accounts/:id"],
+  ["get", "/onramp/orders"],
+  ["get", "/onramp/orders/:id"],
   ["post", "/onramp/noah/setup"],
   ["get", "/onramp/noah/setup/:id"],
   ["get", "/onramp/noah/options"],
