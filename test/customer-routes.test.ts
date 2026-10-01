@@ -56,6 +56,7 @@ afterAll(() => {
 describe("customer route boundary", () => {
   it.each([
     "/onramp/noah/setup",
+    "/onramp/accounts",
     "/offramp/noah/sessions",
     // Starting hosted verification is likewise a POST and likewise distinct
     // from the GET on /compliance/status: status reads the outcome, this one
@@ -91,6 +92,12 @@ describe("customer route boundary", () => {
   });
   it.each([
     "/compliance/status",
+    "/onramp/options",
+    "/onramp/accounts",
+    "/onramp/accounts/id",
+    "/onramp/accounts/id/details",
+    "/onramp/orders",
+    "/onramp/orders/id",
     "/onramp/noah/options",
     "/onramp/noah/payments",
     "/onramp/noah/payments/id",
@@ -139,7 +146,8 @@ describe("customer route boundary", () => {
     "/onramp/recovery",
     // The unqualified prefix is nobody's surface now (RHI-7284).
     "/onramp/sessions",
-    "/onramp/accounts",
+    // A project-key mint; a browser bearer must never reach it through here.
+    "/onramp/orders",
     "/admin/flags",
   ])("does not expose %s", async (path) => {
     const count = calls.length;
