@@ -192,8 +192,7 @@ app.get("/health", (c) => c.json({ ok: true }));
 // /onramp/{options,accounts,orders} routes take this bearer and scope it to its
 // customer; `POST /onramp/orders` (a project-key mint) is deliberately absent,
 // and so is any key-forwarded order read, which would list the project's
-// orders to any browser. The /onramp/noah/* and /offramp/noah/* entries go
-// once the modal is off them (RHI-7972). Every path needs its own entry —
+// orders to any browser. Every path needs its own entry —
 // there is no catch-all, so an unlisted route 404s here before it ever reaches
 // the processor.
 const CUSTOMER_ROUTES = [
@@ -210,19 +209,6 @@ const CUSTOMER_ROUTES = [
   ["get", "/onramp/accounts/:id"],
   ["get", "/onramp/orders"],
   ["get", "/onramp/orders/:id"],
-  ["post", "/onramp/noah/setup"],
-  ["get", "/onramp/noah/setup/:id"],
-  ["get", "/onramp/noah/options"],
-  ["get", "/onramp/noah/payments"],
-  ["get", "/onramp/noah/payments/:id"],
-  ["get", "/onramp/noah/accounts"],
-  ["get", "/onramp/noah/accounts/:id/details"],
-  ["get", "/onramp/noah/accounts/:id"],
-  ["post", "/offramp/noah/sessions"],
-  ["get", "/offramp/noah/sessions/:id"],
-  ["get", "/offramp/noah/options"],
-  ["get", "/offramp/noah/payments"],
-  ["get", "/offramp/noah/payments/:id"],
 ] as const;
 
 for (const [method, path] of CUSTOMER_ROUTES) {

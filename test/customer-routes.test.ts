@@ -55,9 +55,7 @@ afterAll(() => {
 
 describe("customer route boundary", () => {
   it.each([
-    "/onramp/noah/setup",
     "/onramp/accounts",
-    "/offramp/noah/sessions",
     // Starting hosted verification is likewise a POST and likewise distinct
     // from the GET on /compliance/status: status reads the outcome, this one
     // creates the session that produces it.
@@ -84,7 +82,7 @@ describe("customer route boundary", () => {
     },
   );
   it("preserves processor rejection and prevents caching errors", async () => {
-    const response = await fetch(`${base}/onramp/noah/payments?status=403`, {
+    const response = await fetch(`${base}/onramp/orders?status=403`, {
       headers: { authorization: "Bearer browser-token" },
     });
     expect(response.status).toBe(403);
@@ -98,17 +96,6 @@ describe("customer route boundary", () => {
     "/onramp/accounts/id/details",
     "/onramp/orders",
     "/onramp/orders/id",
-    "/onramp/noah/options",
-    "/onramp/noah/payments",
-    "/onramp/noah/payments/id",
-    "/onramp/noah/accounts",
-    "/onramp/noah/accounts/id",
-    "/onramp/noah/accounts/id/details",
-    "/onramp/noah/setup/id",
-    "/offramp/noah/options",
-    "/offramp/noah/payments",
-    "/offramp/noah/payments/id",
-    "/offramp/noah/sessions/id",
   ])("forwards only browser credentials on %s", async (path) => {
     const response = await fetch(`${base}${path}?limit=10`, {
       headers: {
@@ -129,7 +116,7 @@ describe("customer route boundary", () => {
   });
   it("rejects missing bearer without reaching upstream", async () => {
     const count = calls.length;
-    const response = await fetch(`${base}/onramp/noah/payments`);
+    const response = await fetch(`${base}/onramp/orders`);
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(calls.length).toBe(count);
@@ -144,8 +131,10 @@ describe("customer route boundary", () => {
     "/compliance/support/sessions",
     "/compliance/recovery/sessions",
     "/onramp/recovery",
-    // The unqualified prefix is nobody's surface now (RHI-7284).
     "/onramp/sessions",
+    // Legacy provider-scoped routes, removed with the processor's (RHI-7972).
+    "/onramp/noah/setup",
+    "/offramp/noah/sessions",
     // A project-key mint; a browser bearer must never reach it through here.
     "/onramp/orders",
     "/admin/flags",
@@ -170,7 +159,7 @@ describe("customer route boundary", () => {
     expect(calls.length).toBe(count);
   });
   it("allows browser Authorization preflight", async () => {
-    const response = await fetch(`${base}/onramp/noah/setup`, {
+    const response = await fetch(`${base}/onramp/accounts`, {
       method: "OPTIONS",
       headers: {
         origin: "https://app.test",
