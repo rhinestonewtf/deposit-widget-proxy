@@ -227,7 +227,7 @@ Custom proxies must allow `Authorization` in CORS and explicitly forward only
 the customer routes in `CUSTOMER_ROUTES` in `src/index.ts`. Build fresh upstream
 headers: `Authorization`, `Content-Type`, `Origin`, `Referer`, and
 `x-deposit-modal-version`. **Never inject or forward `x-api-key` on these routes.**
-For `GET /onramp/options`, also set `x-user-country` or `x-client-ip` using the
+For `GET /onramp/options` and `POST /onramp/accounts`, also set `x-user-country` or `x-client-ip` using the
 same trusted-ingress resolution as regional payment methods. Never copy these
 headers from the browser. This lets the processor prefer an available provider
 for new bank-account customers; existing issued accounts remain accessible.
