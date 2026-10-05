@@ -211,6 +211,16 @@ const CUSTOMER_ROUTES = [
   ["get", "/onramp/orders/:id"],
 ] as const;
 
+function localize(c: Context, headers: Record<string, string>): void {
+  if (!LOCALIZATION_ENABLED) return;
+  const { country, clientIp } = resolveEdgeSignals(
+    { header: (name) => c.req.header(name), directIp: directPeerIp(c) },
+    EDGE_CONFIG,
+  );
+  if (country) headers["x-user-country"] = country;
+  else if (clientIp) headers["x-client-ip"] = clientIp;
+}
+
 for (const [method, path] of CUSTOMER_ROUTES) {
   app[method](path, async (c) => {
     c.header("Cache-Control", "no-store");
@@ -219,6 +229,7 @@ for (const [method, path] of CUSTOMER_ROUTES) {
       return c.json({ error: "Missing or malformed bearer token" }, 401);
     }
     const headers: Record<string, string> = { ...JSON_HEADERS, authorization };
+    if (path === "/onramp/options") localize(c, headers);
     for (const name of ["origin", "referer", MODAL_VERSION_HEADER]) {
       const value = c.req.header(name);
       if (value) headers[name] = value;
@@ -267,14 +278,7 @@ for (const [method, path, upstreamPath] of ROUTES) {
     // from the request: `headers` is built fresh, so a browser-supplied
     // x-user-country / x-client-ip is dropped no matter what it sends. They are
     // also absent from the CORS allow-list, so a browser can't even send them.
-    if (LOCALIZATION_ENABLED) {
-      const { country, clientIp } = resolveEdgeSignals(
-        { header: (name) => c.req.header(name), directIp: directPeerIp(c) },
-        EDGE_CONFIG,
-      );
-      if (country) headers["x-user-country"] = country;
-      else if (clientIp) headers["x-client-ip"] = clientIp;
-    }
+    localize(c, headers);
     const upstream = await fetch(
       `${BACKEND_URL}${upstreamPath ?? pathname}${search}`,
       {
