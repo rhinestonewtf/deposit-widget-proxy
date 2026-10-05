@@ -102,6 +102,19 @@ afterAll(() => {
 })
 
 describe('client-IP relay (TRUSTED_PROXY_HOPS)', () => {
+  test.each([
+    ['GET', '/onramp/options?provider=noah'],
+    ['POST', '/onramp/accounts'],
+  ])('localizes customer %s %s from trusted ingress and strips browser country claims', async (method, path) => {
+    seen = []
+    const response = await fetch(`http://localhost:${HOPS_PORT}${path}`, {
+      method,
+      body: method === 'POST' ? JSON.stringify({ provider: 'noah', currency: 'EUR' }) : undefined,
+      headers: { authorization: 'Bearer customer-session', 'x-forwarded-for': CLIENT_IP, 'x-user-country': 'BR' },
+    })
+    expect(response.status).toBe(200)
+    expect(seen).toEqual([{ country: null, clientIp: CLIENT_IP }])
+  })
   test('relays the forwarded client IP', async () => {
     const relayed = await callVia(HOPS_PORT, { 'x-forwarded-for': CLIENT_IP })
 
