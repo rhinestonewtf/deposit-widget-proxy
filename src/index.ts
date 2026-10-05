@@ -229,7 +229,12 @@ for (const [method, path] of CUSTOMER_ROUTES) {
       return c.json({ error: "Missing or malformed bearer token" }, 401);
     }
     const headers: Record<string, string> = { ...JSON_HEADERS, authorization };
-    if (path === "/onramp/options" || (method === "post" && path === "/onramp/accounts")) {
+    // Each picks or gates the customer's currency by country.
+    if (
+      path === "/onramp/options" ||
+      (method === "post" &&
+        (path === "/onramp/accounts" || path === "/compliance/verification"))
+    ) {
       localize(c, headers);
     }
     for (const name of ["origin", "referer", MODAL_VERSION_HEADER]) {

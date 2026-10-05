@@ -254,6 +254,11 @@ mints the bearer itself from project credentials and is therefore never proxied.
 Verification is still not a preliminary capability request — completion is read
 from `GET /compliance/status`, never from the hosted frame.
 
+`GET /onramp/options`, `POST /onramp/accounts` and `POST /compliance/verification`
+carry the trusted country (`x-user-country` or `x-client-ip`), because the
+processor picks the customer's currency from it: EUR inside SEPA, USD elsewhere.
+Without it every customer is treated as outside SEPA.
+
 `GET /onramp/accounts/:id/details` returns the customer's bank transfer
 instructions. Forward it with `Cache-Control: no-store` and never log or cache
 its body. Deploy proxy support before the modal that reads it.
