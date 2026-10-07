@@ -135,8 +135,6 @@ describe("customer route boundary", () => {
     // Legacy provider-scoped routes, removed with the processor's (RHI-7972).
     "/onramp/noah/setup",
     "/offramp/noah/sessions",
-    // A project-key mint; a browser bearer must never reach it through here.
-    "/onramp/orders",
     "/admin/flags",
   ])("does not expose %s", async (path) => {
     const count = calls.length;
@@ -150,6 +148,63 @@ describe("customer route boundary", () => {
     ).toBe(404);
     expect(calls.length).toBe(count);
   });
+  it("mints a checkout on the key and never forwards a browser bearer or key", async () => {
+    const body = JSON.stringify({ provider: "swapped", kind: "fiat" });
+    const response = await fetch(`${base}/onramp/orders`, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer browser-token",
+        "x-api-key": "attacker",
+        "content-type": "application/json",
+        origin: "https://app.test",
+      },
+      body,
+    });
+    expect(response.status).toBe(200);
+    const request = calls.at(-1)!;
+    expect(request.headers.get("x-api-key")).toBe("server-key");
+    expect(request.headers.get("authorization")).toBeNull();
+    expect(request.headers.get("origin")).toBe("https://app.test");
+    expect(request.body).toBe(body);
+  });
+
+  it("serves the provider list on the key", async () => {
+    expect((await fetch(`${base}/onramp/providers`)).status).toBe(200);
+    expect(calls.at(-1)?.headers.get("x-api-key")).toBe("server-key");
+  });
+
+  it.each([
+    "/onramp/orders/0199a000-0000-7000-8000-000000000001",
+    "/onramp/options?provider=swapped&kind=fiat",
+  ])("serves %s on the key without a bearer", async (path) => {
+    const response = await fetch(`${base}${path}`, {
+      headers: { "x-api-key": "attacker" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const request = calls.at(-1)!;
+    expect(request.headers.get("x-api-key")).toBe("server-key");
+    expect(request.headers.get("authorization")).toBeNull();
+    expect(new URL(request.url).pathname + new URL(request.url).search).toBe(
+      path,
+    );
+  });
+
+  it.each([
+    // The list would hand any browser every order of the project.
+    ["/onramp/orders", {}],
+    // A customer-bearer provider's discovery never runs on the key.
+    ["/onramp/options?provider=noah", {}],
+    ["/onramp/options", {}],
+    // A malformed bearer is refused, never downgraded to the key.
+    ["/onramp/orders/id", { authorization: "Bearer" }],
+  ] as const)("refuses %s without a valid bearer", async (path, headers) => {
+    const count = calls.length;
+    const response = await fetch(`${base}${path}`, { headers });
+    expect(response.status).toBe(401);
+    expect(calls.length).toBe(count);
+  });
+
   it("does not expose a preliminary capability endpoint", async () => {
     const count = calls.length;
     const response = await fetch(`${base}/compliance/access?currency=EUR`, {

@@ -129,9 +129,13 @@ secrets and runs on forks.
 - **Bun's `fetch` silently downgrades methods it doesn't recognise to `GET`.**
   Any route beyond GET/POST needs a wire-level test that the upstream sees the
   real method (see `test/assets-proxy.test.ts`).
-- **`CUSTOMER_ROUTES` never attach the API key.** They relay the browser's
-  `Authorization` bearer instead (401 without one), so a route authorized by the
-  end user belongs there, and one needing the project's key in `ROUTES`.
+- **`CUSTOMER_ROUTES` never attach the API key to a bearer request.** They relay
+  the browser's `Authorization` bearer instead, so a route authorized by the end
+  user belongs there, and one needing the project's key in `ROUTES`. Without a
+  bearer they 401, except `keyForwardable`: the key serves `GET /onramp/options`
+  for `provider=swapped` and ONE order by id (`GET /onramp/orders/:id`). The order
+  list is never key-forwarded: it would hand any browser every order of the
+  project. A malformed bearer is refused, never downgraded to the key.
 - **`POST /setup` is deliberately not proxied** (it rotates the webhook secret
   and sponsorship config — an admin write). `GET /setup` is, because the
   processor returns only `hasWebhookSecret`, never the secret.

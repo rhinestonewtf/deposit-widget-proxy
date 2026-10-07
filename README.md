@@ -245,8 +245,11 @@ the conversion routes directly: `GET /onramp/options`, `POST`/`GET
 /onramp/accounts`, `GET /onramp/accounts/:id[/details]` and `GET
 /onramp/orders[/:id]`, which the processor scopes to the bearer's customer. A
 path without an entry in `CUSTOMER_ROUTES` 404s here rather than
-reaching the processor. `POST /onramp/orders` is a project-key mint and is not
-on this list; never forward an order read with `x-api-key`, which would list
+reaching the processor. The card and exchange checkout (Swapped) runs on the
+project key instead: `GET /onramp/providers` and `POST /onramp/orders` are key
+routes, and with no bearer the key also serves `GET /onramp/options?provider=swapped`
+and one order by id (`GET /onramp/orders/:id`, an id the browser holds from its
+own checkout). Never forward the order list with `x-api-key`: it would list
 every order of the project. `POST /compliance/verification` starts or resumes hosted
 verification for the customer the bearer names, and returns a `nextAction` to
 present; it is a customer-bearer route, unlike `POST /compliance/sessions`, which

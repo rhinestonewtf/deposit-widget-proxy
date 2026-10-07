@@ -53,10 +53,12 @@ if (
 ) {
   throw new Error("TRUSTED_PROXY_HOPS must be a non-negative integer");
 }
-const isTrustedProxy = createTrustedProxyCheck(
-  process.env.TRUSTED_PROXY_CIDRS,
-);
-if (TRUSTED_PROXY_HOPS !== undefined && TRUSTED_PROXY_HOPS > 0 && !isTrustedProxy) {
+const isTrustedProxy = createTrustedProxyCheck(process.env.TRUSTED_PROXY_CIDRS);
+if (
+  TRUSTED_PROXY_HOPS !== undefined &&
+  TRUSTED_PROXY_HOPS > 0 &&
+  !isTrustedProxy
+) {
   throw new Error(
     "TRUSTED_PROXY_HOPS > 0 requires TRUSTED_PROXY_CIDRS: without an allowlist any client could forge x-forwarded-for",
   );
@@ -79,7 +81,9 @@ function directPeerIp(c: Context): string | undefined {
   const server = (
     c.env as
       | {
-          server?: { requestIP?: (req: Request) => { address?: string } | null };
+          server?: {
+            requestIP?: (req: Request) => { address?: string } | null;
+          };
         }
       | undefined
   )?.server;
@@ -134,6 +138,11 @@ const ROUTES = [
   ["post", "/onramp/swapped/connect-url"],
   ["get", "/onramp/swapped/connect-exchanges"],
   ["get", "/onramp/swapped/status/:smartAccount"],
+  // Unified ramp, project-key side. A checkout mint signs a hosted URL for a
+  // registered account, the same privilege as widget-url above; any bearer the
+  // browser sends is dropped, never forwarded.
+  ["get", "/onramp/providers"],
+  ["post", "/onramp/orders"],
   // Read-only client config for the modal. Only GET is proxied — POST /setup is
   // an admin write (rotates the webhook secret / sponsorship) and must stay
   // off the browser-facing proxy. The processor never returns the signing
@@ -188,13 +197,13 @@ app.use(
 
 app.get("/health", (c) => c.json({ ok: true }));
 
-// Customer routes never borrow the application's credentials. The unified
-// /onramp/{options,accounts,orders} routes take this bearer and scope it to its
-// customer; `POST /onramp/orders` (a project-key mint) is deliberately absent,
-// and so is any key-forwarded order read, which would list the project's
-// orders to any browser. Every path needs its own entry —
-// there is no catch-all, so an unlisted route 404s here before it ever reaches
-// the processor.
+// Customer routes forward the browser's bearer and never the application's
+// key. Two of them also serve a browser with no bearer, on the key, for the
+// project-key provider (Swapped): its options, and ONE order read by an id the
+// browser already holds (its own checkout). The order LIST is never
+// key-forwarded: it would hand any browser every order of the project. Every
+// path needs its own entry — there is no catch-all, so an unlisted route 404s
+// here before it ever reaches the processor.
 const CUSTOMER_ROUTES = [
   ["get", "/compliance/status"],
   // Starts or resumes hosted verification for the customer named by the bearer.
@@ -221,15 +230,78 @@ function localize(c: Context, headers: Record<string, string>): void {
   else if (clientIp) headers["x-client-ip"] = clientIp;
 }
 
+/** Forward to the processor on the application's key. */
+const forwardWithKey = async (
+  c: Context,
+  method: string,
+  upstreamPath?: string,
+): Promise<Response> => {
+  const path = c.req.routePath;
+  const { pathname, search } = new URL(c.req.url);
+  // Forward the browser's Origin/Referer to the processor so it can derive
+  // the Swapped submerchant (per-dapp attribution) from the embedding page's
+  // domain. Without these, the processor only sees this proxy and the
+  // submerchant falls back to "unknown".
+  const headers: Record<string, string> = {
+    ...JSON_HEADERS,
+    "x-api-key": API_KEY,
+  };
+  const origin = c.req.header("origin");
+  if (origin) headers.origin = origin;
+  const referer = c.req.header("referer");
+  if (referer) headers.referer = referer;
+  // Same rationale as origin/referer: relay the modal's version so the
+  // processor can report which modal version each client runs. Without it
+  // the processor only ever sees this proxy. Passed through unvalidated —
+  // the processor shape-checks and length-caps it before use.
+  const modalVersion = c.req.header(MODAL_VERSION_HEADER);
+  if (modalVersion) headers[MODAL_VERSION_HEADER] = modalVersion;
+  // Regional on-ramp localization. Note these are SET here and never copied
+  // from the request: `headers` is built fresh, so a browser-supplied
+  // x-user-country / x-client-ip is dropped no matter what it sends. They are
+  // also absent from the CORS allow-list, so a browser can't even send them.
+  localize(c, headers);
+  const upstream = await fetch(
+    `${BACKEND_URL}${upstreamPath ?? pathname}${search}`,
+    {
+      method: method.toUpperCase(),
+      headers,
+      body: method === "get" ? undefined : await c.req.text(),
+    },
+  );
+  const responseHeaders: Record<string, string> = { ...JSON_HEADERS };
+  if (path === "/analytics/ingest-token" && upstream.ok) {
+    responseHeaders["Cache-Control"] = "no-store";
+  }
+  return new Response(await upstream.text(), {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
+};
+
+/** Without a bearer, the key may serve only these reads. */
+function keyForwardable(path: string, url: URL): boolean {
+  if (path === "/onramp/orders/:id") return true;
+  if (path === "/onramp/options")
+    return url.searchParams.get("provider") === "swapped";
+  return false;
+}
+
 for (const [method, path] of CUSTOMER_ROUTES) {
   app[method](path, async (c) => {
     c.header("Cache-Control", "no-store");
     const authorization = c.req.header("authorization");
     if (!authorization || !/^Bearer [^\s]+$/i.test(authorization)) {
+      if (!authorization && keyForwardable(path, new URL(c.req.url))) {
+        return forwardWithKey(c, method);
+      }
       return c.json({ error: "Missing or malformed bearer token" }, 401);
     }
     const headers: Record<string, string> = { ...JSON_HEADERS, authorization };
-    if (path === "/onramp/options" || (method === "post" && path === "/onramp/accounts")) {
+    if (
+      path === "/onramp/options" ||
+      (method === "post" && path === "/onramp/accounts")
+    ) {
       localize(c, headers);
     }
     for (const name of ["origin", "referer", MODAL_VERSION_HEADER]) {
@@ -256,48 +328,9 @@ for (const [method, path] of CUSTOMER_ROUTES) {
 
 for (const [method, path, upstreamPath] of ROUTES) {
   // `app.on` rather than `app[method]`: Hono has no `app.query`.
-  app.on(method.toUpperCase(), path, async (c) => {
-    const { pathname, search } = new URL(c.req.url);
-    // Forward the browser's Origin/Referer to the processor so it can derive
-    // the Swapped submerchant (per-dapp attribution) from the embedding page's
-    // domain. Without these, the processor only sees this proxy and the
-    // submerchant falls back to "unknown".
-    const headers: Record<string, string> = {
-      ...JSON_HEADERS,
-      "x-api-key": API_KEY,
-    };
-    const origin = c.req.header("origin");
-    if (origin) headers.origin = origin;
-    const referer = c.req.header("referer");
-    if (referer) headers.referer = referer;
-    // Same rationale as origin/referer: relay the modal's version so the
-    // processor can report which modal version each client runs. Without it
-    // the processor only ever sees this proxy. Passed through unvalidated —
-    // the processor shape-checks and length-caps it before use.
-    const modalVersion = c.req.header(MODAL_VERSION_HEADER);
-    if (modalVersion) headers[MODAL_VERSION_HEADER] = modalVersion;
-    // Regional on-ramp localization. Note these are SET here and never copied
-    // from the request: `headers` is built fresh, so a browser-supplied
-    // x-user-country / x-client-ip is dropped no matter what it sends. They are
-    // also absent from the CORS allow-list, so a browser can't even send them.
-    localize(c, headers);
-    const upstream = await fetch(
-      `${BACKEND_URL}${upstreamPath ?? pathname}${search}`,
-      {
-        method: method.toUpperCase(),
-        headers,
-        body: method === "get" ? undefined : await c.req.text(),
-      },
-    );
-    const responseHeaders: Record<string, string> = { ...JSON_HEADERS };
-    if (path === "/analytics/ingest-token" && upstream.ok) {
-      responseHeaders["Cache-Control"] = "no-store";
-    }
-    return new Response(await upstream.text(), {
-      status: upstream.status,
-      headers: responseHeaders,
-    });
-  });
+  app.on(method.toUpperCase(), path, (c) =>
+    forwardWithKey(c, method, upstreamPath),
+  );
 }
 
 export default {
