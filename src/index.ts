@@ -218,6 +218,9 @@ const CUSTOMER_ROUTES = [
   ["get", "/onramp/accounts/:id"],
   ["get", "/onramp/orders"],
   ["get", "/onramp/orders/:id"],
+  // Offramp discovery: the customer's payout rails and each rail's form.
+  ["get", "/offramp/options"],
+  ["get", "/offramp/channels/:channelId/form"],
 ] as const;
 
 function localize(c: Context, headers: Record<string, string>): void {
