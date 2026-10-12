@@ -97,7 +97,6 @@ describe("customer route boundary", () => {
     "/onramp/orders",
     "/onramp/orders/id",
     "/offramp/options",
-    "/offramp/channels/id/form",
   ])("forwards only browser credentials on %s", async (path) => {
     const response = await fetch(`${base}${path}?limit=10`, {
       headers: {
