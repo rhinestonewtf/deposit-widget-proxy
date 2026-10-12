@@ -218,8 +218,11 @@ const CUSTOMER_ROUTES = [
   ["get", "/onramp/accounts/:id"],
   ["get", "/onramp/orders"],
   ["get", "/onramp/orders/:id"],
-  // Offramp discovery: the customer's payout methods.
+  // Offramp: the customer's payout methods, and their withdrawals. The POST
+  // body carries bank details: forwarded as-is, never read or logged here.
   ["get", "/offramp/options"],
+  ["post", "/offramp/sessions"],
+  ["get", "/offramp/sessions/:id"],
 ] as const;
 
 function localize(c: Context, headers: Record<string, string>): void {

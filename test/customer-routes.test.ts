@@ -97,6 +97,7 @@ describe("customer route boundary", () => {
     "/onramp/orders",
     "/onramp/orders/id",
     "/offramp/options",
+    "/offramp/sessions/id",
   ])("forwards only browser credentials on %s", async (path) => {
     const response = await fetch(`${base}${path}?limit=10`, {
       headers: {
@@ -203,6 +204,32 @@ describe("customer route boundary", () => {
     const count = calls.length;
     const response = await fetch(`${base}${path}`, { headers });
     expect(response.status).toBe(401);
+    expect(calls.length).toBe(count);
+  });
+
+  it("opens a withdrawal on the bearer only, body unchanged", async () => {
+    const body = JSON.stringify({ methodId: "m", amount: "10" });
+    const send = (headers: Record<string, string>) =>
+      fetch(`${base}/offramp/sessions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body,
+      });
+    expect(
+      (
+        await send({
+          authorization: "Bearer browser-token",
+          "x-api-key": "attacker",
+        })
+      ).status,
+    ).toBe(200);
+    const request = calls.at(-1)!;
+    expect(request.headers.get("authorization")).toBe("Bearer browser-token");
+    expect(request.headers.get("x-api-key")).toBeNull();
+    expect(request.body).toBe(body);
+
+    const count = calls.length;
+    expect((await send({})).status).toBe(401);
     expect(calls.length).toBe(count);
   });
 
