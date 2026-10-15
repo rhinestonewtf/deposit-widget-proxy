@@ -36,7 +36,7 @@ function captureProcessor(payload: unknown, status = 200): ProcessorCall[] {
 }
 
 describe("CEX Connect protocol-fee proxy contract", () => {
-  it("preserves exchangeFeeBps from connect-exchanges", async () => {
+  it("preserves exchangeFeeBps from the exchange options", async () => {
     const payload = {
       exchanges: [
         { connection: "binance", name: "Binance", logoUrl: null },
@@ -49,21 +49,23 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     const calls = captureProcessor(payload);
 
     const response = await handler(
-      new Request("http://proxy.test/onramp/swapped/connect-exchanges"),
+      new Request(
+        "http://proxy.test/onramp/options?provider=swapped&kind=exchange",
+      ),
     );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(payload);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(
-      "https://processor.test/onramp/swapped/connect-exchanges",
+      "https://processor.test/onramp/options?provider=swapped&kind=exchange",
     );
     expect(new Headers(calls[0]?.init.headers).get("x-api-key")).toBe(
       "proxy-key",
     );
   });
 
-  it("preserves the fee-bearing signed URL and disclosure from connect-url", async () => {
+  it("preserves the fee-bearing signed URL and disclosure from an exchange order", async () => {
     const payload = {
       ok: true,
       url: "https://connect.swapped.test/?walletAddress=USDC%3Abase%3A0xcexdeposit",
@@ -75,13 +77,15 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     };
     const calls = captureProcessor(payload);
     const requestBody = {
-      smartAccount: "0x0000000000000000000000000000000000000001",
+      provider: "swapped",
+      kind: "exchange",
+      account: "0x0000000000000000000000000000000000000001",
       connection: "binance",
       acceptedExchangeFeeBps: 35,
     };
 
     const response = await handler(
-      new Request("http://proxy.test/onramp/swapped/connect-url", {
+      new Request("http://proxy.test/onramp/orders", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -95,7 +99,7 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     expect(await response.json()).toEqual(payload);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(
-      "https://processor.test/onramp/swapped/connect-url",
+      "https://processor.test/onramp/orders",
     );
     expect(calls[0]?.init.method).toBe("POST");
     expect(JSON.parse(calls[0]?.init.body as string)).toEqual(requestBody);
@@ -111,13 +115,15 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     };
     const calls = captureProcessor(payload, 409);
     const requestBody = {
-      smartAccount: "0x0000000000000000000000000000000000000001",
+      provider: "swapped",
+      kind: "exchange",
+      account: "0x0000000000000000000000000000000000000001",
       connection: "binance",
       acceptedExchangeFeeBps: 35,
     };
 
     const response = await handler(
-      new Request("http://proxy.test/onramp/swapped/connect-url", {
+      new Request("http://proxy.test/onramp/orders", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(requestBody),

@@ -106,8 +106,8 @@ secrets and runs on forks.
   has no `QUERY`. Deploy proxies before a modal that sends it.
 - **Adding a route the modal calls means older self-hosted proxies 404 it.**
   How bad that is depends entirely on the route — `/register-managed` missing
-  kills registration outright; `/onramp/swapped/payment-methods` missing
-  degrades silently to generic payment methods. Decide which you're shipping.
+  kills registration outright; `/onramp/options` missing hides the Cash
+  tab. Decide which you're shipping.
 - **A new ORIGIN breaks a narrowed allow-list the same way a new header does.**
   A mobile integration calls from the hosted embed page
   (`https://deposit.rhinestone.dev`, `https://dev.deposit.rhinestone.dev`), not
