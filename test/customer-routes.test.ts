@@ -208,10 +208,13 @@ describe("customer route boundary", () => {
     expect(calls.length).toBe(count);
   });
 
-  it("opens a withdrawal on the bearer only, body unchanged", async () => {
-    const body = JSON.stringify({ methodId: "m", amount: "10" });
+  it.each([
+    ["/offramp/orders", { methodId: "m", amount: "10" }],
+    ["/offramp/orders/id/funding", { txHash: `0x${"ab".repeat(32)}` }],
+  ])("forwards POST %s on the bearer only, body unchanged", async (path, payload) => {
+    const body = JSON.stringify(payload);
     const send = (headers: Record<string, string>) =>
-      fetch(`${base}/offramp/orders`, {
+      fetch(`${base}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
         body,
@@ -225,6 +228,7 @@ describe("customer route boundary", () => {
       ).status,
     ).toBe(200);
     const request = calls.at(-1)!;
+    expect(new URL(request.url).pathname).toBe(path);
     expect(request.headers.get("authorization")).toBe("Bearer browser-token");
     expect(request.headers.get("x-api-key")).toBeNull();
     expect(request.body).toBe(body);
