@@ -35,16 +35,20 @@ function captureProcessor(payload: unknown, status = 200): ProcessorCall[] {
   return calls;
 }
 
-describe("CEX Connect protocol-fee proxy contract", () => {
-  it("preserves exchangeFeeBps from the exchange options", async () => {
+describe("exchange checkout on the project key", () => {
+  it("forwards the exchange options on the key and returns them unchanged", async () => {
     const payload = {
-      exchanges: [
-        { connection: "binance", name: "Binance", logoUrl: null },
+      provider: "swapped",
+      kind: "exchange",
+      connections: [
+        {
+          connection: "binance",
+          name: "Binance",
+          logoUrl: null,
+          kind: "exchange",
+          appHandoff: "none",
+        },
       ],
-      fetchedAt: "2026-07-27T00:00:00.000Z",
-      expiresAt: "2026-07-28T00:00:00.000Z",
-      stale: false,
-      exchangeFeeBps: 35,
     };
     const calls = captureProcessor(payload);
 
@@ -65,24 +69,23 @@ describe("CEX Connect protocol-fee proxy contract", () => {
     );
   });
 
-  it("preserves the fee-bearing signed URL and disclosure from an exchange order", async () => {
+  it("starts an exchange order on the key, body unchanged, and passes the 202 through", async () => {
     const payload = {
-      ok: true,
-      url: "https://connect.swapped.test/?walletAddress=USDC%3Abase%3A0xcexdeposit",
-      currencyCode: "USDC_BASE",
-      sandbox: false,
-      externalCustomerId: "0xuser:order-id",
-      exchangeFeeBps: 35,
+      orderId: "0199a000-0000-7000-8000-000000000001",
+      nextAction: {
+        type: "hosted",
+        url: "https://connect.swapped.test/?walletAddress=USDC%3Abase%3A0xcexdeposit",
+        presentation: "iframe",
+      },
       expiresAt: "2026-07-27T01:00:00.000Z",
     };
-    const calls = captureProcessor(payload);
-    const requestBody = {
+    const calls = captureProcessor(payload, 202);
+    const body = JSON.stringify({
       provider: "swapped",
       kind: "exchange",
       account: "0x0000000000000000000000000000000000000001",
       connection: "binance",
-      acceptedExchangeFeeBps: 35,
-    };
+    });
 
     const response = await handler(
       new Request("http://proxy.test/onramp/orders", {
@@ -91,48 +94,18 @@ describe("CEX Connect protocol-fee proxy contract", () => {
           "content-type": "application/json",
           origin: "https://client.example",
         },
-        body: JSON.stringify(requestBody),
+        body,
       }),
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(202);
     expect(await response.json()).toEqual(payload);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe(
-      "https://processor.test/onramp/orders",
-    );
+    expect(calls[0]?.url).toBe("https://processor.test/onramp/orders");
     expect(calls[0]?.init.method).toBe("POST");
-    expect(JSON.parse(calls[0]?.init.body as string)).toEqual(requestBody);
-    expect(new Headers(calls[0]?.init.headers).get("origin")).toBe(
-      "https://client.example",
-    );
-  });
-
-  it("preserves a stale fee-acceptance conflict and the processor's current rate", async () => {
-    const payload = {
-      error: "The Exchange Fee changed",
-      exchangeFeeBps: 50,
-    };
-    const calls = captureProcessor(payload, 409);
-    const requestBody = {
-      provider: "swapped",
-      kind: "exchange",
-      account: "0x0000000000000000000000000000000000000001",
-      connection: "binance",
-      acceptedExchangeFeeBps: 35,
-    };
-
-    const response = await handler(
-      new Request("http://proxy.test/onramp/orders", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(requestBody),
-      }),
-    );
-
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual(payload);
-    expect(calls).toHaveLength(1);
-    expect(JSON.parse(calls[0]?.init.body as string)).toEqual(requestBody);
+    expect(calls[0]?.init.body).toBe(body);
+    const headers = new Headers(calls[0]?.init.headers);
+    expect(headers.get("x-api-key")).toBe("proxy-key");
+    expect(headers.get("origin")).toBe("https://client.example");
   });
 });
