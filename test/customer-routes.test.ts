@@ -97,7 +97,8 @@ describe("customer route boundary", () => {
     "/onramp/orders",
     "/onramp/orders/id",
     "/offramp/options",
-    "/offramp/sessions/id",
+    "/offramp/orders",
+    "/offramp/orders/id",
   ])("forwards only browser credentials on %s", async (path) => {
     const response = await fetch(`${base}${path}?limit=10`, {
       headers: {
@@ -210,7 +211,7 @@ describe("customer route boundary", () => {
   it("opens a withdrawal on the bearer only, body unchanged", async () => {
     const body = JSON.stringify({ methodId: "m", amount: "10" });
     const send = (headers: Record<string, string>) =>
-      fetch(`${base}/offramp/sessions`, {
+      fetch(`${base}/offramp/orders`, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
         body,

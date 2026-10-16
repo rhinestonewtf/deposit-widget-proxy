@@ -213,8 +213,11 @@ const CUSTOMER_ROUTES = [
   // Offramp: the customer's payout methods, and their withdrawals. The POST
   // body carries bank details: forwarded as-is, never read or logged here.
   ["get", "/offramp/options"],
-  ["post", "/offramp/sessions"],
-  ["get", "/offramp/sessions/:id"],
+  ["post", "/offramp/orders"],
+  ["get", "/offramp/orders"],
+  ["get", "/offramp/orders/:id"],
+  // The source transfer's hash, for a cross-route withdrawal.
+  ["post", "/offramp/orders/:id/funding"],
 ] as const;
 
 function localize(c: Context, headers: Record<string, string>): void {
