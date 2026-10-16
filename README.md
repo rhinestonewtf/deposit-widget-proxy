@@ -81,6 +81,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `POST` | `/positions/:address/unwind` |
 | `POST` | `/deposits/recover` |
 | `POST` | `/analytics/ingest-token` |
+| `POST` | `/onramp/orders` |
 | `GET` | `/check/:address` |
 | `GET` | `/positions/:address` |
 | `GET` | `/portfolio/:address`, `/portfolio/solana/:address` |
@@ -90,6 +91,7 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/setup` |
 | `GET` | `/chains` |
 | `GET` | `/qr/tokens` |
+| `GET` | `/onramp/providers` |
 | `GET` | `/health` — liveness, answered locally |
 
 Both `/positions` routes are served by a `deposits:read` key. `unwind` writes
@@ -118,6 +120,11 @@ five-minute, analytics-ingest-only attribution token. The response is marked
 is on every route. Self-hosted or custom proxies must add this exact route before
 relying on attribution; older proxies return 404, but deposits and analytics
 event collection continue without attribution.
+
+`GET /onramp/providers` lists the project's onramps, and `POST /onramp/orders`
+starts a card or exchange checkout (Swapped). With no bearer, the key also
+serves Swapped's options and one order by id; see
+[customer-scoped conversion routes](#customer-scoped-conversion-routes).
 
 A few deliberate omissions:
 
@@ -261,8 +268,9 @@ from `GET /compliance/status`, never from the hosted frame.
 instructions. Forward it with `Cache-Control: no-store` and never log or cache
 its body. Deploy proxy support before the modal that reads it.
 
-Support/recovery routes are not exposed by
-this foundation. Existing Swapped routes are unchanged. Conversion routes remain
-503 until their journey implementations land. The initial contract supports EUR/USD bank
-transfers only, not cards. Hosted setup/beneficiary sessions do not execute money
-movement, and iframe completion must never be treated as settlement.
+Bank transfers (EUR/USD) run on the customer routes; card and exchange checkout
+runs on the key routes above. The processor has removed the legacy
+`/onramp/swapped/*` routes and this proxy does not forward them, so card and
+exchange checkout needs modal 0.20.0 or later. Support and recovery routes are
+not exposed. Hosted verification and checkout frames move no money: never treat
+iframe completion as settlement.
