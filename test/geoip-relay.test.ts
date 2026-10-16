@@ -57,7 +57,7 @@ async function callVia(
   headers: Record<string, string> = {},
 ): Promise<Relayed> {
   seen = []
-  await fetch(`http://localhost:${port}/onramp/swapped/payment-methods`, {
+  await fetch(`http://localhost:${port}/onramp/options?provider=swapped&kind=fiat`, {
     headers,
   })
   const relayed = seen[0]

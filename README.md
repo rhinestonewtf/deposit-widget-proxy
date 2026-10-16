@@ -78,7 +78,6 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `POST` | `/quotes/preview` |
 | `POST` | `/deposits/permit/prepare`, `/deposits/permit` |
 | `POST` | `/safe/withdraw`, `/polymarket/withdraw` |
-| `POST` | `/onramp/swapped/widget-url`, `/onramp/swapped/connect-url` |
 | `POST` | `/positions/:address/unwind` |
 | `POST` | `/deposits/recover` |
 | `POST` | `/analytics/ingest-token` |
@@ -91,7 +90,6 @@ Callers reach these without an API key — the proxy injects it. Everything goes
 | `GET` | `/setup` |
 | `GET` | `/chains` |
 | `GET` | `/qr/tokens` |
-| `GET` | `/onramp/swapped/payment-methods`, `/onramp/swapped/connect-exchanges`, `/onramp/swapped/status/:smartAccount` |
 | `GET` | `/health` — liveness, answered locally |
 
 Both `/positions` routes are served by a `deposits:read` key. `unwind` writes

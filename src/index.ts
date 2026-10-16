@@ -130,17 +130,9 @@ const ROUTES = [
   ["post", "/deposits/permit"],
   ["post", "/safe/withdraw"],
   ["post", "/polymarket/withdraw"],
-  // Regional fiat method list. Localized from the country/IP resolved below —
-  // without that it returns the generic set, which is what it did while this
-  // route was missing from the proxy entirely.
-  ["get", "/onramp/swapped/payment-methods"],
-  ["post", "/onramp/swapped/widget-url"],
-  ["post", "/onramp/swapped/connect-url"],
-  ["get", "/onramp/swapped/connect-exchanges"],
-  ["get", "/onramp/swapped/status/:smartAccount"],
-  // Unified ramp, project-key side. A checkout mint signs a hosted URL for a
-  // registered account, the same privilege as widget-url above; any bearer the
-  // browser sends is dropped, never forwarded.
+  // Ramp, project-key side. A checkout mint signs a hosted URL for a
+  // registered account; any bearer the browser sends is dropped, never
+  // forwarded.
   ["get", "/onramp/providers"],
   ["post", "/onramp/orders"],
   // Read-only client config for the modal. Only GET is proxied — POST /setup is
