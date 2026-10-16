@@ -249,7 +249,7 @@ The browser uses `GET /compliance/status`, `POST /compliance/verification` and
 the conversion routes directly: `GET /onramp/options`, `POST`/`GET
 /onramp/accounts`, `GET /onramp/accounts/:id[/details]` and `GET
 /onramp/orders[/:id]`, plus offramp (`GET /offramp/options`, `POST`/`GET
-/offramp/orders`, `GET /offramp/orders/:id`, `POST /offramp/orders/:id/funding`), which the processor scopes to
+/offramp/orders`, `GET /offramp/orders/:id`), which the processor scopes to
 the bearer's customer. A
 path without an entry in `CUSTOMER_ROUTES` 404s here rather than
 reaching the processor. The card and exchange checkout (Swapped) runs on the

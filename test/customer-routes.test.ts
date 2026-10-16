@@ -210,7 +210,6 @@ describe("customer route boundary", () => {
 
   it.each([
     ["/offramp/orders", { methodId: "m", amount: "10" }],
-    ["/offramp/orders/id/funding", { txHash: `0x${"ab".repeat(32)}` }],
   ])("forwards POST %s on the bearer only, body unchanged", async (path, payload) => {
     const body = JSON.stringify(payload);
     const send = (headers: Record<string, string>) =>
