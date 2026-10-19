@@ -216,8 +216,6 @@ const CUSTOMER_ROUTES = [
   ["post", "/offramp/orders"],
   ["get", "/offramp/orders"],
   ["get", "/offramp/orders/:id"],
-  // The source transfer's hash, for a cross-route withdrawal.
-  ["post", "/offramp/orders/:id/funding"],
 ] as const;
 
 function localize(c: Context, headers: Record<string, string>): void {

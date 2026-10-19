@@ -73,7 +73,14 @@ beforeAll(async () => {
         country: req.headers.get('x-user-country'),
         clientIp: req.headers.get('x-client-ip'),
       })
-      return Response.json({ country: null, methods: [], recommendedMethod: null })
+      return Response.json({
+        provider: 'swapped',
+        kind: 'fiat',
+        country: null,
+        methods: [],
+        otherMethods: [],
+        recommendedMethod: null,
+      })
     },
   })
 

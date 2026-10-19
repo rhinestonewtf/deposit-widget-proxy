@@ -14,7 +14,7 @@
     "start": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "test:contract": "bun test test/cex-protocol-fee-proxy.test.ts"
+    "test:contract": "bun test test/exchange-checkout-proxy.test.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
